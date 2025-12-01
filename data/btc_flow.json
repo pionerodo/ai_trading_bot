@@ -1,0 +1,93 @@
+{
+  "symbol": "BTCUSDT",
+  "generated_at_iso": "2025-12-01T01:32:44.177170+00:00",
+  "crowd_trend": "bearish",
+  "trend_score": -3.6806722047217857,
+  "alignment_score": 0.75,
+  "volatility_score": 0.2725124574794417,
+  "volatility_regime": "normal",
+  "timeframes_used": [
+    "1m",
+    "5m",
+    "15m",
+    "1h"
+  ],
+  "bull_tfs": [],
+  "bear_tfs": [
+    "5m",
+    "15m",
+    "1h"
+  ],
+  "flat_tfs": [
+    "1m"
+  ],
+  "reasons": [
+    "1m: flat (-0.011%, ts=0.36, vol=low)",
+    "5m: down (-0.056%, ts=0.43, vol=low)",
+    "15m: down (-0.144%, ts=0.65, vol=normal)",
+    "1h: down (-0.153%, ts=0.22, vol=high)"
+  ],
+  "warnings": [
+    "etp_strong_inflow_rolling"
+  ],
+  "tf_details": {
+    "1m": {
+      "direction": "flat",
+      "change_pct": -0.01081413631811904,
+      "trend_strength_score": 0.36439455104143587,
+      "avg_range_pct": 0.029676997878295242,
+      "volatility_label": "low",
+      "weight": 1.0,
+      "weighted_score": 0.0
+    },
+    "5m": {
+      "direction": "down",
+      "change_pct": -0.05623213292358134,
+      "trend_strength_score": 0.42521728801948533,
+      "avg_range_pct": 0.1322432895085031,
+      "volatility_label": "low",
+      "weight": 2.0,
+      "weighted_score": -0.8504345760389707
+    },
+    "15m": {
+      "direction": "down",
+      "change_pct": -0.1439635513306814,
+      "trend_strength_score": 0.6544668346038167,
+      "avg_range_pct": 0.2199707360539211,
+      "volatility_label": "normal",
+      "weight": 3.0,
+      "weighted_score": -1.9634005038114501
+    },
+    "1h": {
+      "direction": "down",
+      "change_pct": -0.15346458593972534,
+      "trend_strength_score": 0.21670928121784133,
+      "avg_range_pct": 0.7081588064770474,
+      "volatility_label": "high",
+      "weight": 4.0,
+      "weighted_score": -0.8668371248713653
+    }
+  },
+  "etp_summary": {
+    "latest": {
+      "date_display": "28 Nov 2025",
+      "date_iso": "2025-11-28",
+      "timestamp_ms": 1764288000000,
+      "total_flow_usd": 71400000.0,
+      "sign": "inflow"
+    },
+    "rolling_total_flow_usd": 221200000.0,
+    "rolling_sign": "inflow",
+    "net_flow_3d_usd": 221200000.0,
+    "signal": "heavy_inflow"
+  },
+  "liq_summary": {
+    "captured_at_iso": "2025-12-01T00:44:53Z",
+    "captured_at_ms": 1764549893153,
+    "current_price": 88348,
+    "dominant_side": "balanced",
+    "upside_focus_zone": "96000-99500",
+    "downside_focus_zone": "78000-85500",
+    "comment": "Сверху и снизу есть сильные пики. Главные уровни: 99k сверху (шорты) и 78–79k снизу (лонги). Карта сбалансирована, возможны резкие движения в обе стороны."
+  }
+}

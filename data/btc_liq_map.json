@@ -1,0 +1,182 @@
+{
+  "symbol": "BTC",
+  "source": "coinglass_hyperliquid_liq_map",
+  "captured_at_iso": "2025-12-01T00:44:53Z",
+  "captured_at_ms": 1764549893153,
+  "current_price": 88348,
+  "zones": [
+    {
+      "side": "long",
+      "price": 78700,
+      "strength": 10,
+      "comment": "крупнейший кластер ликвидаций лонгов: 3.03K BTC + 621 BTC — главный магнит снизу"
+    },
+    {
+      "side": "long",
+      "price": 85200,
+      "strength": 8,
+      "comment": "сильный кластер ликвидаций лонгов: 1.52K BTC + 607 BTC"
+    },
+    {
+      "side": "short",
+      "price": 99135,
+      "strength": 10,
+      "comment": "мощнейший пик ликвидаций шортов: 3.09K BTC + 1.10K BTC — главный магнит сверху"
+    },
+    {
+      "side": "short",
+      "price": 96240,
+      "strength": 7,
+      "comment": "значимый кластер ликвидаций шортов: 1.07K BTC + 753 BTC"
+    },
+    {
+      "side": "short",
+      "price": 97850,
+      "strength": 7,
+      "comment": "укрупнённый блок ликвидаций шортов: ~1.40K BTC"
+    }
+  ],
+  "summary": {
+    "dominant_side": "balanced",
+    "upside_focus_zone": "96000-99500",
+    "downside_focus_zone": "78000-85500",
+    "comment": "Сверху и снизу есть сильные пики. Главные уровни: 99k сверху (шорты) и 78–79k снизу (лонги). Карта сбалансирована, возможны резкие движения в обе стороны."
+  },
+  "history": [
+    {
+      "captured_at_iso": "",
+      "captured_at_ms": null,
+      "current_price": 90930,
+      "zones": [
+        {
+          "side": "short",
+          "price": 99135,
+          "strength": 10,
+          "comment": "мощнейший кластер ликвидаций шортов: 2.92K BTC + 1.10K BTC"
+        },
+        {
+          "side": "short",
+          "price": 97850,
+          "strength": 7,
+          "comment": "крупный пик шортов: 1.40K BTC + 753 BTC"
+        },
+        {
+          "side": "short",
+          "price": 101000,
+          "strength": 6,
+          "comment": "укрупнённый блок ликвидаций шортов выше основной зоны"
+        },
+        {
+          "side": "long",
+          "price": 78700,
+          "strength": 9,
+          "comment": "очень сильный кластер ликвидаций лонгов: 2.91K BTC + 621 BTC"
+        },
+        {
+          "side": "long",
+          "price": 85000,
+          "strength": 7,
+          "comment": "существенный кластер лонгов: 1.61K BTC + 607 BTC"
+        },
+        {
+          "side": "long",
+          "price": 74500,
+          "strength": 5,
+          "comment": "дополнительная зона ликвидаций лонгов на нижнем уровне"
+        }
+      ],
+      "summary": {
+        "dominant_side": "shorts",
+        "upside_focus_zone": "97500-101000",
+        "downside_focus_zone": "78000-85500",
+        "comment": "Карта доминирует ликвидациями шортов, особенно блок возле 99k. Лонговые кластеры сильные, но уступают по выраженности. Основной магнит для цены — область 97.5k–101k."
+      }
+    },
+    {
+      "captured_at_iso": "2025-12-01T00:44:53Z",
+      "captured_at_ms": 1764549893153,
+      "current_price": 88348,
+      "zones": [
+        {
+          "side": "long",
+          "price": 78700,
+          "strength": 10,
+          "comment": "крупнейший кластер ликвидаций лонгов: 3.03K BTC + 621 BTC — главный магнит снизу"
+        },
+        {
+          "side": "long",
+          "price": 85200,
+          "strength": 8,
+          "comment": "сильный кластер ликвидаций лонгов: 1.52K BTC + 607 BTC"
+        },
+        {
+          "side": "short",
+          "price": 99135,
+          "strength": 10,
+          "comment": "мощнейший пик ликвидаций шортов: 3.09K BTC + 1.10K BTC — главный магнит сверху"
+        },
+        {
+          "side": "short",
+          "price": 96240,
+          "strength": 7,
+          "comment": "значимый кластер ликвидаций шортов: 1.07K BTC + 753 BTC"
+        },
+        {
+          "side": "short",
+          "price": 97850,
+          "strength": 7,
+          "comment": "укрупнённый блок ликвидаций шортов: ~1.40K BTC"
+        }
+      ],
+      "summary": {
+        "dominant_side": "balanced",
+        "upside_focus_zone": "96000-99500",
+        "downside_focus_zone": "78000-85500",
+        "comment": "Сверху и снизу есть сильные пики. Главные уровни: 99k сверху (шорты) и 78–79k снизу (лонги). Карта сбалансирована, возможны резкие движения в обе стороны."
+      }
+    }
+  ],
+  "latest": {
+    "captured_at_iso": "2025-12-01T00:44:53Z",
+    "captured_at_ms": 1764549893153,
+    "current_price": 88348,
+    "zones": [
+      {
+        "side": "long",
+        "price": 78700,
+        "strength": 10,
+        "comment": "крупнейший кластер ликвидаций лонгов: 3.03K BTC + 621 BTC — главный магнит снизу"
+      },
+      {
+        "side": "long",
+        "price": 85200,
+        "strength": 8,
+        "comment": "сильный кластер ликвидаций лонгов: 1.52K BTC + 607 BTC"
+      },
+      {
+        "side": "short",
+        "price": 99135,
+        "strength": 10,
+        "comment": "мощнейший пик ликвидаций шортов: 3.09K BTC + 1.10K BTC — главный магнит сверху"
+      },
+      {
+        "side": "short",
+        "price": 96240,
+        "strength": 7,
+        "comment": "значимый кластер ликвидаций шортов: 1.07K BTC + 753 BTC"
+      },
+      {
+        "side": "short",
+        "price": 97850,
+        "strength": 7,
+        "comment": "укрупнённый блок ликвидаций шортов: ~1.40K BTC"
+      }
+    ],
+    "summary": {
+      "dominant_side": "balanced",
+      "upside_focus_zone": "96000-99500",
+      "downside_focus_zone": "78000-85500",
+      "comment": "Сверху и снизу есть сильные пики. Главные уровни: 99k сверху (шорты) и 78–79k снизу (лонги). Карта сбалансирована, возможны резкие движения в обе стороны."
+    }
+  }
+}

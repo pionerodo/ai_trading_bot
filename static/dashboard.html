@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AI Hedge Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b1220;
+      color: #e5e7eb;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .card {
+      background: #111827;
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid #1f2937;
+    }
+    .label {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+    .value {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .tag {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      margin-right: 4px;
+    }
+    .tag-long { background: #064e3b; color: #bbf7d0; }
+    .tag-short { background: #7f1d1d; color: #fecaca; }
+    .tag-flat { background: #374151; color: #e5e7eb; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    th, td {
+      padding: 4px 6px;
+      border-bottom: 1px solid #1f2937;
+      text-align: left;
+    }
+    th {
+      background: #111827;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .mt-sm { margin-top: 8px; }
+    .mt-md { margin-top: 12px; }
+    .small { font-size: 0.78rem; color: #9ca3af; }
+    .error { color: #fca5a5; font-size: 0.82rem; margin-bottom: 8px; }
+    .success { color: #6ee7b7; font-size: 0.82rem; margin-bottom: 8px; }
+    .scroll {
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    button {
+      background: #2563eb;
+      border: none;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>AI Hedge Bot — Live Dashboard</h1>
+    <div class="small">
+      Last update: <span id="last-update">-</span><br>
+      <button id="refresh-btn">Refresh now</button>
+    </div>
+  </div>
+
+  <div id="messages"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Bot state</div>
+      <div class="mt-sm">
+        <div>Position:
+          <span id="state-position" class="tag tag-flat">NONE</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">Entry:</span>
+          <span class="value" id="state-entry">-</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">Qty:</span>
+          <span class="value" id="state-qty">-</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">Equity:</span>
+          <span class="value" id="state-equity">-</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Last decision</div>
+      <div class="mt-sm">
+        <div id="decision-action" class="tag tag-flat">-</div>
+        <div class="mt-sm">
+          <span class="label">Confidence:</span>
+          <span class="value" id="decision-confidence">-</span>
+        </div>
+        <div class="mt-sm small" id="decision-reason">-</div>
+        <div class="mt-sm small" id="decision-time">-</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Flow summary</div>
+      <div class="mt-sm">
+        <div class="small">
+          Crowd trend: <span id="flow-trend" class="value">-</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">Trend score:</span>
+          <span class="value" id="flow-score">-</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">Vol regime:</span>
+          <span class="value" id="flow-vol-regime">-</span>
+        </div>
+        <div class="mt-sm small" id="flow-reasons"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">BTC ETF flows</div>
+      <div class="mt-sm small">
+        <div>Last date: <span id="etp-date">-</span></div>
+        <div class="mt-sm">
+          <span class="label">Daily net:</span>
+          <span class="value" id="etp-daily">-</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">3d net:</span>
+          <span class="value" id="etp-3d">-</span>
+        </div>
+        <div class="mt-sm small" id="etp-comment"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Liquidations map</div>
+      <div class="mt-sm small">
+        <div>Price: <span class="value" id="liq-price">-</span></div>
+        <div class="mt-sm">
+          <span class="label">Dominant side:</span>
+          <span class="value" id="liq-dominant">-</span>
+        </div>
+        <div class="mt-sm small">
+          Upside: <span id="liq-upside">-</span><br>
+          Downside: <span id="liq-downside">-</span>
+        </div>
+        <div class="mt-sm small" id="liq-comment"></div>
+      </div>
+    </div>
+
+    <!-- Новый блок Binance status -->
+    <div class="card">
+      <div class="label">Binance status</div>
+      <div class="mt-sm small">
+        <div>Mode: <span class="value" id="binance-mode">-</span></div>
+        <div class="mt-sm">
+          <span class="label">Connected:</span>
+          <span class="value" id="binance-connected">-</span>
+        </div>
+        <div class="mt-sm">
+          <span class="label">Trading:</span>
+          <span class="value" id="binance-enabled">-</span>
+        </div>
+        <div class="mt-sm small" id="binance-extra"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-md">
+    <div class="label">Recent executions</div>
+    <div class="scroll mt-sm">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Side</th>
+            <th>Price</th>
+            <th>Qty</th>
+          </tr>
+        </thead>
+        <tbody id="executions-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card mt-md">
+    <div class="label">Recent decisions</div>
+    <div class="scroll mt-sm">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Action</th>
+            <th>Conf</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody id="decisions-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/dashboard/overview";
+    const BINANCE_URL = "/binance/health";
+    const messages = document.getElementById("messages");
+    const refreshBtn = document.getElementById("refresh-btn");
+
+    function setMessage(text, type = "success") {
+      messages.innerHTML = "";
+      if (!text) return;
+      const div = document.createElement("div");
+      div.className = type === "error" ? "error" : "success";
+      div.textContent = text;
+      messages.appendChild(div);
+    }
+
+    function formatTs(ms) {
+      if (!ms) return "-";
+      try {
+        return new Date(ms).toLocaleString();
+      } catch (e) {
+        return String(ms);
+      }
+    }
+
+    function formatISO(iso) {
+      if (!iso) return "-";
+      try {
+        return new Date(iso).toLocaleString();
+      } catch (e) {
+        return iso;
+      }
+    }
+
+    function formatMillions(value) {
+      if (value === null || value === undefined) return "-";
+      const m = value / 1000000;
+      const sign = m > 0 ? "+" : "";
+      return sign + m.toFixed(1) + "M";
+    }
+
+    function updateDashboard(data) {
+      document.getElementById("last-update").textContent = formatISO(data.generated_at);
+
+      const state = data.state || {};
+      const pos = (state.position || "NONE").toUpperCase();
+      const posEl = document.getElementById("state-position");
+      posEl.textContent = pos;
+      posEl.className = "tag " + (
+        pos === "LONG" ? "tag-long" :
+        pos === "SHORT" ? "tag-short" : "tag-flat"
+      );
+
+      document.getElementById("state-entry").textContent =
+        state.entry_price != null ? state.entry_price : "-";
+      document.getElementById("state-qty").textContent =
+        state.qty != null ? state.qty : "-";
+      document.getElementById("state-equity").textContent =
+        state.equity != null ? state.equity : "-";
+
+      const decisions = data.decisions || [];
+      if (decisions.length > 0) {
+        const last = decisions[0];
+        const action = (last.action || "-").toUpperCase();
+        const actEl = document.getElementById("decision-action");
+        actEl.textContent = action;
+        actEl.className = "tag " + (
+          action === "LONG" ? "tag-long" :
+          action === "SHORT" ? "tag-short" : "tag-flat"
+        );
+        document.getElementById("decision-confidence").textContent =
+          last.confidence != null ? last.confidence.toFixed(2) : "-";
+        document.getElementById("decision-reason").textContent = last.reason || "-";
+        document.getElementById("decision-time").textContent = formatTs(last.timestamp_ms);
+      }
+
+      const flow = data.flow || {};
+      document.getElementById("flow-trend").textContent = flow.crowd_trend || "-";
+      document.getElementById("flow-score").textContent =
+        flow.trend_score != null ? flow.trend_score.toFixed(2) : "-";
+      document.getElementById("flow-vol-regime").textContent =
+        flow.volatility_regime || "-";
+      document.getElementById("flow-reasons").textContent =
+        (flow.reasons || []).join(" | ");
+
+      // ETF summary
+      const etp = flow.etp_summary || null;
+      if (etp && etp.latest) {
+        document.getElementById("etp-date").textContent =
+          etp.latest.date_display || etp.latest.date_iso || "-";
+        document.getElementById("etp-daily").textContent =
+          formatMillions(etp.latest.total_flow_usd);
+        document.getElementById("etp-3d").textContent =
+          formatMillions(etp.rolling_total_flow_usd);
+        let etpComment = "";
+        if (etp.latest.sign === "inflow") etpComment += "Сегодня чистый приток. ";
+        if (etp.latest.sign === "outflow") etpComment += "Сегодня чистый отток. ";
+        if (etp.rolling_sign === "inflow") etpComment += "За последние дни превалирует приток.";
+        if (etp.rolling_sign === "outflow") etpComment += "За последние дни превалирует отток.";
+        document.getElementById("etp-comment").textContent = etpComment || "";
+      } else {
+        document.getElementById("etp-date").textContent = "-";
+        document.getElementById("etp-daily").textContent = "-";
+        document.getElementById("etp-3d").textContent = "-";
+        document.getElementById("etp-comment").textContent = "";
+      }
+
+      // Liquidations summary
+      const liq = flow.liq_summary || null;
+      if (liq) {
+        document.getElementById("liq-price").textContent =
+          liq.current_price != null ? liq.current_price : "-";
+        document.getElementById("liq-dominant").textContent =
+          liq.dominant_side || "-";
+        document.getElementById("liq-upside").textContent =
+          liq.upside_focus_zone || "-";
+        document.getElementById("liq-downside").textContent =
+          liq.downside_focus_zone || "-";
+        document.getElementById("liq-comment").textContent =
+          liq.comment || "";
+      } else {
+        document.getElementById("liq-price").textContent = "-";
+        document.getElementById("liq-dominant").textContent = "-";
+        document.getElementById("liq-upside").textContent = "-";
+        document.getElementById("liq-downside").textContent = "-";
+        document.getElementById("liq-comment").textContent = "";
+      }
+
+      const execBody = document.getElementById("executions-body");
+      execBody.innerHTML = "";
+      (data.executions || []).forEach(e => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${formatTs(e.timestamp_ms)}</td>
+          <td>${e.side}</td>
+          <td>${e.price}</td>
+          <td>${e.qty}</td>
+        `;
+        execBody.appendChild(tr);
+      });
+
+      const decBody = document.getElementById("decisions-body");
+      decBody.innerHTML = "";
+      decisions.forEach(d => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${formatTs(d.timestamp_ms)}</td>
+          <td>${(d.action || "").toUpperCase()}</td>
+          <td>${d.confidence != null ? d.confidence.toFixed(2) : "-"}</td>
+          <td>${d.reason || "-"}</td>
+        `;
+        decBody.appendChild(tr);
+      });
+    }
+
+    function updateBinanceStatus(info) {
+      if (!info) {
+        document.getElementById("binance-mode").textContent = "-";
+        document.getElementById("binance-connected").textContent = "-";
+        document.getElementById("binance-enabled").textContent = "-";
+        document.getElementById("binance-extra").textContent = "";
+        return;
+      }
+
+      const enabledFlag = info.binance_enabled === true;
+      const globalTestnet = info.testnet === true;
+      const s = info.status || {};
+      const connected = s.connected === true;
+      const statusEnabled = s.enabled === true;
+      const statusTestnet = s.testnet === true;
+
+      const isTestnet = globalTestnet || statusTestnet;
+
+      let modeText = "DISABLED";
+      if (enabledFlag) {
+        modeText = isTestnet ? "TESTNET" : "LIVE";
+      }
+
+      document.getElementById("binance-mode").textContent = modeText;
+      document.getElementById("binance-connected").textContent = connected ? "YES" : "NO";
+      document.getElementById("binance-enabled").textContent =
+        (enabledFlag && statusEnabled) ? "ON" : "OFF";
+
+      const balances = Array.isArray(s.balances) ? s.balances : [];
+      const positions = Array.isArray(s.positions) ? s.positions : [];
+      document.getElementById("binance-extra").textContent =
+        `Balances: ${balances.length}, Positions: ${positions.length}`;
+    }
+
+    async function loadOverview() {
+      try {
+        setMessage("Loading...", "success");
+        refreshBtn.disabled = true;
+
+        const [overviewRes, binanceRes] = await Promise.all([
+          fetch(API_URL, { cache: "no-store" }),
+          fetch(BINANCE_URL, { cache: "no-store" })
+        ]);
+
+        if (!overviewRes.ok) throw new Error("Overview HTTP " + overviewRes.status);
+        if (!binanceRes.ok) throw new Error("Binance HTTP " + binanceRes.status);
+
+        const [overviewData, binanceData] = await Promise.all([
+          overviewRes.json(),
+          binanceRes.json()
+        ]);
+
+        updateDashboard(overviewData);
+        updateBinanceStatus(binanceData);
+
+        setMessage("Updated successfully");
+      } catch (e) {
+        console.error(e);
+        setMessage("Error loading data: " + e.message, "error");
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    refreshBtn.addEventListener("click", loadOverview);
+    loadOverview();
+    setInterval(loadOverview, 60000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+app:
+  name: "AI Trading Showdown Bot"
+  environment: "dev"
+  symbol: "BTCUSDT"
+
+paths:
+  base_dir: "/www/wwwroot/ai-hedge.cryptobavaro.online/ai_trading_bot"
+  data_dir: "data"
+  logs_dir: "logs"
+
+logging:
+  level: "INFO"
+  file: "logs/bot.log"
+  max_bytes: 10485760      # 10 MB
+  backup_count: 5
+
+database:
+  host: "127.0.0.1"
+  port: 3306
+  user: "ai_trader"
+  password: "2RRS4bnZz2WHntsB"
+  name: "ai_trading_bot"
+  echo: false
+
+risk:
+  max_daily_dd_pct: -2.0
+  max_weekly_dd_pct: -5.0
+  max_position_risk_pct: 1.0
+  max_leverage: 5
+
+analysis:
+  cycle_seconds: 300      # полный цикл анализа/решения
+  symbol: "BTCUSDT"
+  timeframes: ["1m", "5m", "15m", "1h"]
+
+execution:
+  max_open_positions: 1
+  min_entry_confidence: 0.6
+  
+binance:
+  enabled: false          # пока ВСЕГДА false — бот не имеет права лезть в Binance
+  testnet: true           # в будущем будем начинать с testnet
+  api_key: "LcOzaY8XMB9k25WAKRNbgzGt4Bw9BHbni80Rd1PYoP8WkPkhMCVtMRY4ScXCCWGw"
+  api_secret: "pOUS4Jd7hTKHlD2HJ4Mc9SWWrXL4LqqqV4Ep0bdoIyhMoszmFymAkmWi5ogVuEOz"
+
+  # базовые параметры торговли, только для будущей логики
+  symbol: "BTCUSDT"
+  base_asset: "BTC"
+  quote_asset: "USDT"
+
+  # ограничения риска на уровне биржи (будем использовать позже)
+  max_leverage: 3
+  max_position_usd: 500     # не более 500$ в одной позиции
+  max_daily_loss_pct: 5     # дневной лимит просадки, %
+

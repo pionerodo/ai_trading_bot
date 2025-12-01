@@ -1,0 +1,263 @@
+import time
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Dict, Any
+
+from sqlalchemy.orm import Session
+
+from src.core.config_loader import load_config
+from src.execution.state_manager import load_state, save_state
+from src.db.models import Execution
+
+
+_config = load_config()
+_trading_cfg: Dict[str, Any] = _config.get("trading", {}) or {}
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _get_trading_param(name: str, default: float) -> Decimal:
+    value = _trading_cfg.get(name, default)
+    return Decimal(str(value))
+
+
+def _compute_today_realized_pnl(db: Session) -> Decimal:
+    """
+    Суммируем реализованный PnL за текущие сутки по записям executions
+    с json_data["pnl"] (по времени UTC).
+    """
+    now = datetime.now(timezone.utc)
+    start_of_day = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    start_ms = int(start_of_day.timestamp() * 1000)
+
+    q = db.query(Execution).filter(Execution.timestamp_ms >= start_ms)
+
+    total = Decimal("0")
+    for row in q:
+        jd = getattr(row, "json_data", None) or {}
+        pnl = jd.get("pnl")
+        if pnl is not None:
+            total += Decimal(str(pnl))
+    return total
+
+
+def _log_execution(
+    db: Session,
+    symbol: str,
+    side: str,
+    price: float,
+    qty: float,
+    kind: str,
+    pnl: Decimal | None = None,
+) -> None:
+    """
+    Пишем запись в executions (open/close) с возможным PnL.
+    """
+    json_data: Dict[str, Any] = {"type": kind}
+    if pnl is not None:
+        json_data["pnl"] = float(pnl)
+
+    row = Execution(
+        timestamp_ms=_now_ms(),
+        symbol=symbol,
+        side=side,
+        price=price,
+        qty=qty,
+        status="FILLED",
+        exchange_order_id=None,
+        json_data=json_data,
+    )
+    db.add(row)
+    db.commit()
+
+
+def execute_decision(db: Session, decision: dict, price: float):
+    """
+    Ужесточённый исполнителЬ (без Binance):
+    - учитывает risk.level и confidence из decision;
+    - ограничивает риск на сделку;
+    - учитывает дневной лимит потерь;
+    - ведёт виртуальный equity, SL/TP и историю сделок.
+    """
+    symbol = decision.get("symbol", "BTCUSDT")
+
+    state = load_state(db)
+    position = state.get("position", "NONE") or "NONE"
+
+    equity = Decimal(str(state.get("equity", 0) or 0))
+    qty_current = Decimal(str(state.get("qty", 0) or 0))
+
+    action = decision.get("action", "FLAT")
+    confidence = float(decision.get("confidence", 0.0) or 0.0)
+    risk_block = decision.get("risk") or {}
+    risk_level = int(risk_block.get("level", 1))
+
+    # ---- параметры риска из конфига ----
+    max_risk_pct = _get_trading_param("max_risk_pct_per_trade", 0.01)
+    max_daily_loss_pct = _get_trading_param("max_daily_loss_pct", 0.05)
+    position_cap_usd = _get_trading_param("position_size_cap_usd", 5000.0)
+    assumed_stop_pct = _get_trading_param("assumed_stop_pct", 0.01)
+
+    now_ms = _now_ms()
+
+    # ---- дневной PnL и лимит просадки ----
+    today_pnl = _compute_today_realized_pnl(db)
+    equity_start_today = equity - today_pnl
+
+    daily_loss_pct = Decimal("0")
+    if equity_start_today > 0 and today_pnl < 0:
+        daily_loss_pct = (-today_pnl) / equity_start_today
+
+    hard_daily_risk_off = daily_loss_pct > max_daily_loss_pct
+
+    # ---- функции для закрытия позиции ----
+    def close_position_if_any():
+        nonlocal equity, position, qty_current, state
+
+        if position == "NONE" or qty_current == 0:
+            return
+
+        entry_price_raw = state.get("entry_price")
+        if entry_price_raw is None:
+            # на всякий случай закрываем без PnL
+            state.update(
+                {
+                    "position": "NONE",
+                    "entry_price": None,
+                    "entry_time": None,
+                    "qty": 0.0,
+                    "stop_loss": None,
+                    "take_profit": None,
+                    "equity": float(equity),
+                    "updated_at": now_ms,
+                }
+            )
+            save_state(db, state)
+            position = "NONE"
+            qty_current = Decimal("0")
+            return
+
+        entry_price = Decimal(str(entry_price_raw))
+        side_mult = Decimal("1") if position == "LONG" else Decimal("-1")
+        pnl = (Decimal(str(price)) - entry_price) * side_mult * qty_current
+
+        equity += pnl
+
+        _log_execution(
+            db=db,
+            symbol=symbol,
+            side=position,
+            price=float(price),
+            qty=float(qty_current),
+            kind="close",
+            pnl=pnl,
+        )
+
+        state.update(
+            {
+                "position": "NONE",
+                "entry_price": None,
+                "entry_time": None,
+                "qty": 0.0,
+                "stop_loss": None,
+                "take_profit": None,
+                "equity": float(equity),
+                "updated_at": now_ms,
+            }
+        )
+        save_state(db, state)
+
+        position = "NONE"
+        qty_current = Decimal("0")
+
+    # ---- ограничения на НОВЫЕ входы ----
+    MIN_CONF = 0.6
+
+    can_open_new = True
+    if risk_level <= 0:
+        can_open_new = False
+    if confidence < MIN_CONF:
+        can_open_new = False
+    if hard_daily_risk_off:
+        can_open_new = False
+
+    # ---- обрабатываем действие ----
+
+    # 1) FLAT → просто закрыть позицию, новых не открываем
+    if action == "FLAT":
+        close_position_if_any()
+        return
+
+    desired_pos = action  # "LONG" / "SHORT"
+
+    # 2) Если открыта противоположная позиция — закрываем её
+    if position != "NONE" and position != desired_pos:
+        close_position_if_any()
+
+    # 3) Если нельзя открывать новые позиции — на этом всё
+    if not can_open_new:
+        return
+
+    # 4) Если уже в нужной стороне и qty > 0 — ничего не делаем
+    if state.get("position") == desired_pos and qty_current > 0:
+        return
+
+    # 5) Рассчёт размера позиции от риска
+    if equity <= 0:
+        # без депозита не торгуем
+        return
+
+    risk_amount_usd = equity * max_risk_pct
+    if risk_amount_usd <= 0:
+        return
+
+    # Какой нотацион можем позволить при заданном стопе
+    notional_by_risk = risk_amount_usd / assumed_stop_pct
+    target_notional = min(notional_by_risk, position_cap_usd)
+
+    if target_notional <= 0:
+        return
+
+    qty_new = target_notional / Decimal(str(price))
+    # Округляем до 0.0001 BTC
+    qty_new = qty_new.quantize(Decimal("0.0001"))
+
+    if qty_new <= 0:
+        return
+
+    # 6) Открываем виртуальную позицию и сохраняем SL/TP
+    if desired_pos == "LONG":
+        stop_loss = float(Decimal(str(price)) * (Decimal("1") - assumed_stop_pct))
+        take_profit = float(
+            Decimal(str(price)) * (Decimal("1") + assumed_stop_pct * Decimal("2"))
+        )
+    else:  # SHORT
+        stop_loss = float(Decimal(str(price)) * (Decimal("1") + assumed_stop_pct))
+        take_profit = float(
+            Decimal(str(price)) * (Decimal("1") - assumed_stop_pct * Decimal("2"))
+        )
+
+    state.update(
+        {
+            "position": desired_pos,
+            "entry_price": float(price),
+            "entry_time": now_ms,
+            "qty": float(qty_new),
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "equity": float(equity),
+            "updated_at": now_ms,
+        }
+    )
+    save_state(db, state)
+
+    _log_execution(
+        db=db,
+        symbol=symbol,
+        side=desired_pos,
+        price=float(price),
+        qty=float(qty_new),
+        kind="open",
+    )

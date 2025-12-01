@@ -1,0 +1,273 @@
+{
+  "symbol": "BTC",
+  "source": "farside.co.uk/btc",
+  "days": [
+    {
+      "date_display": "10 Nov 2025",
+      "date_iso": "2025-11-10",
+      "timestamp_ms": 1762732800000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": 0 },
+        { "ticker": "FBTC", "flow_usd": 0 },
+        { "ticker": "BITB", "flow_usd": 1200000 },
+        { "ticker": "ARKB", "flow_usd": 0 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC",  "flow_usd": 0 }
+      ],
+      "total_flow_usd": 1200000
+    },
+    {
+      "date_display": "11 Nov 2025",
+      "date_iso": "2025-11-11",
+      "timestamp_ms": 1762819200000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": 224200000 },
+        { "ticker": "FBTC", "flow_usd": 165900000 },
+        { "ticker": "BITB", "flow_usd": 7300000 },
+        { "ticker": "ARKB", "flow_usd": 102500000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC",  "flow_usd": 24100000 }
+      ],
+      "total_flow_usd": 524000000
+    },
+    {
+      "date_display": "12 Nov 2025",
+      "date_iso": "2025-11-12",
+      "timestamp_ms": 1762905600000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -36900000 },
+        { "ticker": "FBTC", "flow_usd": -132900000 },
+        { "ticker": "BITB", "flow_usd": 0 },
+        { "ticker": "ARKB", "flow_usd": -85200000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": -23100000 },
+        { "ticker": "BTC",  "flow_usd": 0 }
+      ],
+      "total_flow_usd": -278100000
+    },
+    {
+      "date_display": "13 Nov 2025",
+      "date_iso": "2025-11-13",
+      "timestamp_ms": 1762992000000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -256600000 },
+        { "ticker": "FBTC", "flow_usd": -119900000 },
+        { "ticker": "BITB", "flow_usd": -47000000 },
+        { "ticker": "ARKB", "flow_usd": -15700000 },
+        { "ticker": "BTCO", "flow_usd": -30800000 },
+        { "ticker": "EZBC", "flow_usd": -5700000 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": -8300000 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": -64500000 },
+        { "ticker": "BTC",  "flow_usd": -318200000 }
+      ],
+      "total_flow_usd": -866700000
+    },
+    {
+      "date_display": "14 Nov 2025",
+      "date_iso": "2025-11-14",
+      "timestamp_ms": 1763078400000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -463100000 },
+        { "ticker": "FBTC", "flow_usd": -2100000 },
+        { "ticker": "BITB", "flow_usd": 0 },
+        { "ticker": "ARKB", "flow_usd": 0 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": -6000000 },
+        { "ticker": "GBTC", "flow_usd": -25100000 },
+        { "ticker": "BTC",  "flow_usd": 4200000 }
+      ],
+      "total_flow_usd": -492100000
+    },
+    {
+      "date_display": "17 Nov 2025",
+      "date_iso": "2025-11-17",
+      "timestamp_ms": 1763337600000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -145600000 },
+        { "ticker": "FBTC", "flow_usd": -12000000 },
+        { "ticker": "BITB", "flow_usd": -9500000 },
+        { "ticker": "ARKB", "flow_usd": -29700000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": -23300000 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": -34500000 },
+        { "ticker": "BTC",  "flow_usd": 0 }
+      ],
+      "total_flow_usd": -254600000
+    },
+    {
+      "date_display": "18 Nov 2025",
+      "date_iso": "2025-11-18",
+      "timestamp_ms": 1763424000000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -523200000 },
+        { "ticker": "FBTC", "flow_usd": 0 },
+        { "ticker": "BITB", "flow_usd": 0 },
+        { "ticker": "ARKB", "flow_usd": 0 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 10800000 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC",  "flow_usd": 139600000 }
+      ],
+      "total_flow_usd": -372800000
+    },
+    {
+      "date_display": "19 Nov 2025",
+      "date_iso": "2025-11-19",
+      "timestamp_ms": 1763510400000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": 60600000 },
+        { "ticker": "FBTC", "flow_usd": -21400000 },
+        { "ticker": "BITB", "flow_usd": 0 },
+        { "ticker": "ARKB", "flow_usd": 0 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": -17600000 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC",  "flow_usd": 53800000 }
+      ],
+      "total_flow_usd": 75400000
+    },
+    {
+      "date_display": "20 Nov 2025",
+      "date_iso": "2025-11-20",
+      "timestamp_ms": 1763596800000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -355500000 },
+        { "ticker": "FBTC", "flow_usd": -190400000 },
+        { "ticker": "BITB", "flow_usd": -21200000 },
+        { "ticker": "ARKB", "flow_usd": -94400000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": -7500000 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": -30600000 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": -199400000 },
+        { "ticker": "BTC",  "flow_usd": -4200000 }
+      ],
+      "total_flow_usd": -903200000
+    },
+    {
+      "date_display": "21 Nov 2025",
+      "date_iso": "2025-11-21",
+      "timestamp_ms": 1763683200000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -122000000 },
+        { "ticker": "FBTC", "flow_usd": 108000000 },
+        { "ticker": "BITB", "flow_usd": 22800000 },
+        { "ticker": "ARKB", "flow_usd": 39100000 },
+        { "ticker": "BTCO", "flow_usd": 35800000 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 8300000 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 61500000 },
+        { "ticker": "BTC",  "flow_usd": 84900000 }
+      ],
+      "total_flow_usd": 238400000
+    },
+    {
+      "date_display": "24 Nov 2025",
+      "date_iso": "2025-11-24",
+      "timestamp_ms": 1763942400000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -149100000 },
+        { "ticker": "FBTC", "flow_usd": 15500000 },
+        { "ticker": "BITB", "flow_usd": -5800000 },
+        { "ticker": "ARKB", "flow_usd": -11600000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC",  "flow_usd": 0 }
+      ],
+      "total_flow_usd": -151000000
+    },
+    {
+      "date_display": "25 Nov 2025",
+      "date_iso": "2025-11-25",
+      "timestamp_ms": 1764028800000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": 83000000 },
+        { "ticker": "FBTC", "flow_usd": 170800000 },
+        { "ticker": "BITB", "flow_usd": -12300000 },
+        { "ticker": "ARKB", "flow_usd": -75900000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": -36900000 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC",  "flow_usd": 0 }
+      ],
+      "total_flow_usd": 128700000
+    },
+    {
+      "date_display": "26 Nov 2025",
+      "date_iso": "2025-11-26",
+      "timestamp_ms": 1764115200000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": 42800000 },
+        { "ticker": "FBTC", "flow_usd": -33300000 },
+        { "ticker": "BITB", "flow_usd": 0 },
+        { "ticker": "ARKB", "flow_usd": 6000000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 5600000 },
+        { "ticker": "BTC",  "flow_usd": 0 }
+      ],
+      "total_flow_usd": 21100000
+    },
+    {
+      "date_display": "28 Nov 2025",
+      "date_iso": "2025-11-28",
+      "timestamp_ms": 1764288000000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": -113700000 },
+        { "ticker": "FBTC", "flow_usd": 77500000 },
+        { "ticker": "BITB", "flow_usd": 0 },
+        { "ticker": "ARKB", "flow_usd": 88000000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 0 },
+        { "ticker": "BTCW", "flow_usd": 0 },
+        { "ticker": "GBTC", "flow_usd": 10700000 },
+        { "ticker": "BTC",  "flow_usd": 8900000 }
+      ],
+      "total_flow_usd": 71400000
+    }
+  ],
+  "notes": ""
+}
