@@ -1,0 +1,32 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual env
+venv/
+.env
+*.env
+
+# Logs & runtime
+logs/
+*.log
+
+# Compiled
+*.so
+*.dll
+*.dylib
+
+# IDE / Editor
+.vscode/
+.idea/
+*.iml
+
+# Data snapshots (опционально)
+data/*.json
+!data/examples/**
+
+# System files
+.DS_Store
+Thumbs.db
