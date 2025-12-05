@@ -1,229 +1,328 @@
+#!/usr/bin/env python3
+"""
+decision_engine.py
+
+v2: Decision Engine с учётом ликвидационных метрик.
+
+Что делает:
+- читает:
+    - data/btc_snapshot_v2.json
+    - data/btc_flow.json
+- на основе risk.mode и crowd.bias выбирает действие: long / short / flat
+- корректирует confidence по ликвидациям (flow.liq_metrics)
+- пишет:
+    - data/decision.json
+    - строку в таблицу decisions (idempotent по symbol+timestamp_ms)
+
+Реальных ордеров НЕТ — только решение и запись в БД.
+"""
+
+import json
 import logging
-from typing import Any, Dict
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+# --- Пути проекта и импорт DB utils ---
+
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.dirname(THIS_DIR)              # .../src
+PROJECT_ROOT = os.path.dirname(SRC_DIR)          # .../ai_trading_bot
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from src.data_collector.db_utils import get_db_connection  # type: ignore
+
+LOG_FILE_PATH = os.path.join(PROJECT_ROOT, "logs", "decision_engine.log")
+
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_snapshot_v2.json")
+FLOW_PATH = os.path.join(DATA_DIR, "btc_flow.json")
+DECISION_PATH = os.path.join(DATA_DIR, "decision.json")
+
+SYMBOL_DB = "BTCUSDT"
+
+logger = logging.getLogger(__name__)
 
 
-logger = logging.getLogger("ai_trading_bot")
+# --- Логирование ---
+
+def setup_logging() -> None:
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
+        fh = logging.FileHandler(LOG_FILE_PATH, encoding="utf-8")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+    except Exception:
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
 
 
-def _safe_get(d: Dict[str, Any], path: str, default=None):
+# --- JSON helpers ---
+
+def load_json(path: str) -> Optional[Dict[str, Any]]:
+    if not os.path.exists(path):
+        logger.error("decision_engine: file not found: %s", path)
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error("decision_engine: failed to load %s: %s", path, e, exc_info=True)
+        return None
+
+
+def save_decision_to_file(decision: Dict[str, Any]) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp_path = DECISION_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(decision, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, DECISION_PATH)
+
+
+# --- Коррекция confidence по ликвидациям ---
+
+def adjust_confidence_with_liq(
+    action: str,
+    confidence: float,
+    liq_metrics: Optional[Dict[str, Any]],
+) -> float:
     """
-    Utility to safely read nested keys from dict using "a.b.c" path.
+    Простая v1-логика:
+
+    - imbalance_last > 0 и imbalance_delta > 0:
+        сверху растёт short-ликвидность → выше риск short-squeeze.
+        - если action == 'long'  → чуть повышаем confidence
+        - если action == 'short' → чуть понижаем confidence
+
+    - imbalance_last < 0 и imbalance_delta < 0:
+        снизу растёт long-ликвидность → выше риск down-sweep.
+        - если action == 'short' → чуть повышаем confidence
+        - если action == 'long'  → чуть понижаем confidence
     """
-    cur = d
-    for part in path.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return default
-        cur = cur[part]
-    return cur
+    if not liq_metrics or action not in ("long", "short"):
+        return confidence
+
+    try:
+        imb_last = float(liq_metrics.get("imbalance_last"))
+        imb_delta = float(liq_metrics.get("imbalance_delta"))
+    except Exception:
+        return confidence
+
+    delta = 0.0
+
+    # short-ликвидность сверху растёт
+    if imb_last > 0 and imb_delta > 0:
+        if action == "long":
+            delta += 0.05
+        elif action == "short":
+            delta -= 0.05
+
+    # long-ликвидность снизу растёт
+    if imb_last < 0 and imb_delta < 0:
+        if action == "short":
+            delta += 0.05
+        elif action == "long":
+            delta -= 0.05
+
+    new_conf = max(0.0, min(1.0, confidence + delta))
+    return new_conf
 
 
-def compute_decision(snapshot: Dict[str, Any], flow: Dict[str, Any]) -> Dict[str, Any]:
+# --- Основная логика принятия решения v1 ---
+
+def build_decision(snapshot: Dict[str, Any], flow: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Rule-based decision engine with explicit risk/meta block.
-
-    Uses only data already prepared in `flow` / `snapshot`:
-
-    - flow.trend_score     : aggregated multi-TF trend score (negative = bearish)
-    - flow.alignment_score : how well TFs agree [0..1]
-    - flow.volatility_*    : regime + score
-    - flow.crowd_trend     : "bullish" / "bearish" / "neutral"
-    - flow.etp_summary     : BTC ETF flows impact
-    - flow.liq_summary     : liquidation map impact
-
-    Output:
-      {
-        action: "LONG"/"SHORT"/"FLAT",
-        confidence: 0..1,
-        reason: "...",
-        risk: { level, mode, global_score, checks{...} },
-        meta: {...}
-      }
+    Базовая логика:
+    - risk.mode + crowd.bias → action + базовый confidence
+    - потом корректируем confidence с учётом ликвидаций (flow.liq_metrics)
     """
+    ts_iso = snapshot.get("timestamp_iso")
+    ts_ms = snapshot.get("timestamp_ms")
+    price = snapshot.get("price")
 
-    # ---- 1. Base fields from flow ----
-    trend_score = float(flow.get("trend_score", 0.0))
-    alignment_score = float(flow.get("alignment_score", 0.0))
-    volatility_regime = flow.get("volatility_regime", "unknown")
-    volatility_score = float(flow.get("volatility_score", 0.0))
-    crowd_trend = flow.get("crowd_trend", "neutral")
+    risk = (flow.get("risk") or {})
+    risk_mode = risk.get("mode", "neutral")
+    risk_score = float(risk.get("global_score", 0.5) or 0.5)
 
-    # ETF block (optional)
-    etp_summary = flow.get("etp_summary") or {}
-    etp_net_flow_usd = float(etp_summary.get("net_flow_usd", 0.0))
-    etp_net_flow_3d_usd = float(etp_summary.get("net_flow_3d_usd", 0.0))
-    etp_signal = etp_summary.get("signal", "none")
+    crowd = (flow.get("crowd") or {})
+    crowd_bias = crowd.get("bias", "neutral")
+    crowd_score = float(crowd.get("score", 0.5) or 0.5)
 
-    # Liquidations map block (optional)
-    liq_summary = flow.get("liq_summary") or {}
-    liq_dominant_side = liq_summary.get("dominant_side", "none")  # "shorts"/"longs"/"none"
-    liq_price = liq_summary.get("current_price")
-    liq_upside_zone = liq_summary.get("upside_focus_zone")
-    liq_downside_zone = liq_summary.get("downside_focus_zone")
+    liq_metrics = flow.get("liq_metrics") if isinstance(flow.get("liq_metrics"), dict) else None
 
-    # Crowd trap index / news sentiment (optional, may be absent)
-    crowd_trap_index = float(flow.get("crowd_trap_index", 0.0))
-    news_sentiment_score = float(flow.get("news_sentiment_score", 0.0))
+    action = "flat"
+    confidence = 0.2
+    reason = "default_flat"
 
-    # ---- 2. Determine base directional bias ----
-    # Thresholds for trend strength
-    strong_trend = 2.5
-    weak_trend = 1.0
-
-    if trend_score > strong_trend:
-        base_action = "LONG"
-    elif trend_score < -strong_trend:
-        base_action = "SHORT"
-    elif abs(trend_score) <= weak_trend:
-        base_action = "FLAT"
+    # 1) если режим risk_off → сидим ровно
+    if risk_mode == "risk_off":
+        action = "flat"
+        confidence = max(0.1, 0.4 - (risk_score * 0.2))
+        reason = "risk_off_mode"
     else:
-        # Moderate trend – follow direction but with lower confidence
-        base_action = "LONG" if trend_score > 0 else "SHORT"
+        # 2) при risk_on смотрим на толпу
+        if risk_mode in ("cautious_risk_on", "aggressive_risk_on"):
+            if crowd_bias == "bullish":
+                action = "long"
+                confidence = 0.5 + (crowd_score - 0.5) * 0.5 + (risk_score - 0.5) * 0.3
+                reason = "crowd_bullish_risk_on"
+            elif crowd_bias == "bearish":
+                action = "short"
+                confidence = 0.5 + (abs(crowd_score - 0.5)) * 0.5 + (risk_score - 0.5) * 0.3
+                reason = "crowd_bearish_risk_on"
+            else:
+                action = "flat"
+                confidence = 0.3 + (risk_score - 0.5) * 0.2
+                reason = "risk_on_but_crowd_neutral"
+        else:
+            # neutral режим
+            if crowd_bias == "bullish":
+                action = "long"
+                confidence = 0.4 + (crowd_score - 0.5) * 0.4
+                reason = "crowd_bullish_neutral_risk"
+            elif crowd_bias == "bearish":
+                action = "short"
+                confidence = 0.4 + (abs(crowd_score - 0.5)) * 0.4
+                reason = "crowd_bearish_neutral_risk"
+            else:
+                action = "flat"
+                confidence = 0.3
+                reason = "neutral_crowd_and_risk"
 
-    # ---- 3. Adjust by alignment / volatility / ETF / liquidations ----
-    confidence = 0.5  # start from neutral
+    # --- корректируем confidence по ликвидациям ---
+    confidence_before = confidence
+    confidence = adjust_confidence_with_liq(action, confidence, liq_metrics)
 
-    # Trend strength contribution
-    confidence += min(abs(trend_score) / 5.0, 0.3)  # up to +0.3
-
-    # Alignment contribution (0..1)
-    confidence += (alignment_score - 0.5) * 0.4  # from -0.2..+0.2 roughly
-
-    # Volatility regime: too high volatility reduces confidence
-    if volatility_regime in ("extreme", "very_high"):
-        confidence -= 0.25
-    elif volatility_regime == "high":
-        confidence -= 0.1
-    elif volatility_regime == "low":
-        confidence -= 0.05
-
-    # ETF flows: strong 3d net inflow/outflow add directional conviction
-    etp_boost = 0.0
-    if abs(etp_net_flow_3d_usd) > 300_000_000:  # 300M+
-        etp_boost = 0.15
-    elif abs(etp_net_flow_3d_usd) > 100_000_000:
-        etp_boost = 0.07
-
-    if etp_net_flow_3d_usd > 0 and base_action == "LONG":
-        confidence += etp_boost
-    elif etp_net_flow_3d_usd < 0 and base_action == "SHORT":
-        confidence += etp_boost
-    elif etp_net_flow_3d_usd * trend_score < 0:
-        # ETF против тренда – слегка душим уверенность
-        confidence -= etp_boost
-
-    # Liquidations: prefer moving toward dense opposite-side clusters
-    if liq_dominant_side == "shorts" and base_action == "LONG":
-        confidence += 0.1
-    elif liq_dominant_side == "longs" and base_action == "SHORT":
-        confidence += 0.1
-
-    # Crowd trap index: if extreme – cut confidence
-    if abs(crowd_trap_index) >= 2.0:
-        confidence -= 0.1
-
-    # Clamp to [0,1]
+    # нормируем
     confidence = max(0.0, min(1.0, confidence))
 
-    # If base_action is FLAT – force low confidence
-    if base_action == "FLAT":
-        confidence = min(confidence, 0.3)
+    decision: Dict[str, Any] = {
+        "symbol": SYMBOL_DB,
+        "timestamp_iso": ts_iso,
+        "timestamp_ms": ts_ms,
+        "price": price,
 
-    action = base_action
-
-    # ---- 4. Risk classification (analytics only, executor already has hard guardrails) ----
-    checks: Dict[str, bool] = {}
-
-    # Trend strong enough?
-    checks["trend_strength_ok"] = abs(trend_score) >= weak_trend
-
-    # Timeframe alignment OK?
-    checks["alignment_ok"] = alignment_score >= 0.55
-
-    # Volatility acceptable?
-    checks["volatility_ok"] = volatility_regime not in ("extreme", "very_high")
-
-    # ETF not screaming against the trade?
-    if base_action == "LONG":
-        checks["etp_ok"] = etp_net_flow_3d_usd >= -150_000_000
-    elif base_action == "SHORT":
-        checks["etp_ok"] = etp_net_flow_3d_usd <= 150_000_000
-    else:
-        checks["etp_ok"] = True
-
-    # Liquidations: avoid trading *into* dominant side with very low confidence
-    if liq_dominant_side == "shorts" and base_action == "SHORT":
-        checks["liq_ok"] = confidence >= 0.5
-    elif liq_dominant_side == "longs" and base_action == "LONG":
-        checks["liq_ok"] = confidence >= 0.5
-    else:
-        checks["liq_ok"] = True
-
-    # Global OK flag (used mostly for diagnostics; executor has its own PnL-based guard)
-    checks["global_risk_ok"] = all(checks.values())
-
-    # Risk mode / level
-    if not checks["global_risk_ok"]:
-        risk_mode = "cautious"
-        risk_level = 0
-    else:
-        if abs(trend_score) >= strong_trend and alignment_score >= 0.7 and volatility_regime in ("normal", "high"):
-            risk_mode = "trend_following"
-            risk_level = 2
-        elif abs(trend_score) <= weak_trend:
-            risk_mode = "sideways"
-            risk_level = 1
-        else:
-            risk_mode = "mixed"
-            risk_level = 1
-
-    # Simple global_score 0..1 just for monitoring
-    # (does NOT directly control execution; we keep executor logic explicit)
-    components = [
-        min(abs(trend_score) / 5.0, 1.0),
-        max(min(alignment_score, 1.0), 0.0),
-        max(0.0, 1.0 - abs(volatility_score)),  # penalty for wild volatility
-    ]
-    global_score = sum(components) / len(components)
-
-    # ---- 5. Human-readable reason ----
-    reason_parts = [risk_mode, f"trend_score={trend_score:.2f}", f"align={alignment_score:.2f}"]
-
-    if etp_net_flow_usd != 0:
-        reason_parts.append(f"etp_1d={'in' if etp_net_flow_usd > 0 else 'out'} {abs(etp_net_flow_usd) / 1_000_000:.1f}M")
-    if etp_net_flow_3d_usd != 0:
-        reason_parts.append(f"etp_3d={'in' if etp_net_flow_3d_usd > 0 else 'out'} {abs(etp_net_flow_3d_usd) / 1_000_000:.1f}M")
-    if liq_dominant_side != "none":
-        reason_parts.append(f"liq: {liq_dominant_side}")
-
-    reason = "|".join(reason_parts)
-
-    # ---- 6. Build result ----
-    meta = {
-        "trend_score_from_flow": trend_score,
-        "alignment_score": alignment_score,
-        "volatility_regime": volatility_regime,
-        "volatility_score": volatility_score,
-        "crowd_trend": crowd_trend,
-        "crowd_trap_index": crowd_trap_index,
-        "etp_net_flow_usd": etp_net_flow_usd,
-        "etp_net_flow_3d_usd": etp_net_flow_3d_usd,
-        "etp_signal": etp_signal,
-        "liq_dominant_side": liq_dominant_side,
-        "liq_price": liq_price,
-        "liq_upside_zone": liq_upside_zone,
-        "liq_downside_zone": liq_downside_zone,
-        "news_sentiment_score": news_sentiment_score,
-    }
-
-    return {
         "action": action,
-        "confidence": round(float(confidence), 3),
+        "confidence": confidence,
         "reason": reason,
-        "risk": {
-            "level": risk_level,
-            "mode": risk_mode,
-            "global_score": round(global_score, 3),
-            "checks": checks,
+
+        "context": {
+            "risk": risk,
+            "crowd": crowd,
+            "liq_metrics": liq_metrics,
+            "raw": {
+                "risk_mode": risk_mode,
+                "risk_score": risk_score,
+                "crowd_bias": crowd_bias,
+                "crowd_score": crowd_score,
+                "confidence_before_liq": confidence_before,
+            },
         },
-        "meta": meta,
     }
+
+    return decision
+
+
+# --- Запись в таблицу decisions ---
+
+def upsert_decision(conn, decision: Dict[str, Any]) -> None:
+    ts_ms = int(decision.get("timestamp_ms") or 0)
+    symbol = decision.get("symbol", SYMBOL_DB)
+    action = decision.get("action", "flat")
+    confidence = float(decision.get("confidence") or 0.0)
+    reason = decision.get("reason", "")[:255]
+
+    json_data = json.dumps(decision, ensure_ascii=False)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM decisions WHERE symbol = %s AND timestamp_ms = %s LIMIT 1",
+            (symbol, ts_ms),
+        )
+        row = cur.fetchone()
+        if row:
+            decision_id = int(row[0])
+            sql = """
+                UPDATE decisions
+                SET action=%s,
+                    confidence=%s,
+                    reason=%s,
+                    json_data=%s
+                WHERE id=%s
+            """
+            cur.execute(sql, (action, confidence, reason, json_data, decision_id))
+        else:
+            sql = """
+                INSERT INTO decisions (
+                    timestamp_ms,
+                    symbol,
+                    action,
+                    confidence,
+                    reason,
+                    json_data
+                )
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """
+            cur.execute(
+                sql,
+                (ts_ms, symbol, action, confidence, reason, json_data),
+            )
+
+    conn.commit()
+
+
+# --- main ---
+
+def main() -> None:
+    setup_logging()
+    logger.info("decision_engine: started")
+
+    snapshot = load_json(SNAPSHOT_PATH)
+    if not snapshot:
+        logger.error("decision_engine: snapshot file missing or invalid: %s", SNAPSHOT_PATH)
+        sys.exit(1)
+
+    flow = load_json(FLOW_PATH)
+    if not flow:
+        logger.error("decision_engine: flow file missing or invalid: %s", FLOW_PATH)
+        sys.exit(1)
+
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        logger.error("decision_engine: cannot get DB connection: %s", e, exc_info=True)
+        sys.exit(1)
+
+    try:
+        decision = build_decision(snapshot, flow)
+        save_decision_to_file(decision)
+        upsert_decision(conn, decision)
+        logger.info(
+            "decision_engine: decision generated (action=%s, conf=%.3f, ts=%s)",
+            decision.get("action"),
+            float(decision.get("confidence") or 0.0),
+            decision.get("timestamp_iso"),
+        )
+    except Exception as e:
+        logger.error("decision_engine: failed: %s", e, exc_info=True)
+        sys.exit(1)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    logger.info("decision_engine: finished")
+
+
+if __name__ == "__main__":
+    main()
