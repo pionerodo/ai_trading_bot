@@ -105,6 +105,7 @@ class Decision(Base):
     sl_price = Column(DECIMAL(20, 8))
     tp1_price = Column(DECIMAL(20, 8))
     tp2_price = Column(DECIMAL(20, 8))
+    liq_tp_zone_id = Column(String(64))
     risk_level = Column(Integer, nullable=False, default=0)
     position_size_usdt = Column(DECIMAL(20, 8), nullable=False, default=0)
     leverage = Column(DECIMAL(10, 4), nullable=False, default=0)
@@ -113,6 +114,155 @@ class Decision(Base):
     snapshot_id = Column(BigInteger)
     flow_id = Column(BigInteger)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class LiquidationZone(Base):
+    __tablename__ = "liquidation_zones"
+    __table_args__ = (
+        Index("idx_liq_zone_symbol_capture", "symbol", "captured_at_utc"),
+        Index("idx_liq_zone_cluster", "cluster_id", "captured_at_utc"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(String(20), nullable=False)
+    source = Column(String(64))
+    captured_at_utc = Column(DateTime, nullable=False)
+    cluster_id = Column(String(64), nullable=False)
+    side = Column(Enum("long", "short"), nullable=False)
+    price_level = Column(DECIMAL(20, 8), nullable=False)
+    strength_score = Column(DECIMAL(10, 8))
+    size_btc = Column(DECIMAL(20, 8))
+    comment = Column(String(255))
+
+
+class Position(Base):
+    __tablename__ = "positions"
+    __table_args__ = (
+        Index("idx_positions_symbol_status", "symbol", "status"),
+        Index("idx_positions_opened_at", "opened_at_utc"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(String(20), nullable=False)
+    side = Column(Enum("long", "short"), nullable=False)
+    status = Column(Enum("open", "closed"), nullable=False, default="open")
+
+    entry_price = Column(DECIMAL(20, 8), nullable=False)
+    avg_entry_price = Column(DECIMAL(20, 8), nullable=False)
+    size = Column(DECIMAL(20, 8), nullable=False)
+    max_size = Column(DECIMAL(20, 8))
+    sl_price = Column(DECIMAL(20, 8))
+    tp1_price = Column(DECIMAL(20, 8))
+    tp2_price = Column(DECIMAL(20, 8))
+
+    opened_at_utc = Column(DateTime, nullable=False)
+    closed_at_utc = Column(DateTime)
+
+    pnl_usdt = Column(DECIMAL(20, 8))
+    pnl_pct = Column(DECIMAL(20, 8))
+
+    tp1_hit = Column(Boolean, nullable=False, default=False)
+    tp2_hit = Column(Boolean, nullable=False, default=False)
+    liq_exit_used = Column(Boolean, nullable=False, default=False)
+
+    risk_mode_at_open = Column(String(32))
+    position_management_json = Column(JSON)
+    decision_id = Column(BigInteger)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("client_order_id", name="uq_orders_client_order"),
+        Index("idx_orders_decision", "decision_id"),
+        Index("idx_orders_symbol_status", "symbol", "status"),
+        Index("idx_orders_exchange_order", "exchange_order_id"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    exchange_order_id = Column(BigInteger)
+    client_order_id = Column(String(64), nullable=False)
+    symbol = Column(String(20), nullable=False)
+    role = Column(Enum("entry", "sl", "tp1", "tp2", "liq_exit", "manual_exit"), nullable=False)
+    side = Column(Enum("buy", "sell"), nullable=False)
+    order_type = Column(String(32), nullable=False)
+    status = Column(String(32), nullable=False)
+    reason_code = Column(String(64))
+    decision_id = Column(BigInteger)
+    position_id = Column(BigInteger)
+    price = Column(DECIMAL(20, 8))
+    stop_price = Column(DECIMAL(20, 8))
+    orig_qty = Column(DECIMAL(20, 8), nullable=False)
+    executed_qty = Column(DECIMAL(20, 8), nullable=False, default=0)
+    avg_fill_price = Column(DECIMAL(20, 8))
+    created_at_utc = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at_utc = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    json_data = Column(JSON)
+
+
+class Trade(Base):
+    __tablename__ = "trades"
+    __table_args__ = (
+        Index("idx_trades_position", "position_id"),
+        Index("idx_trades_decision", "decision_id"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    position_id = Column(BigInteger)
+    decision_id = Column(BigInteger)
+    symbol = Column(String(20), nullable=False)
+    side = Column(Enum("long", "short"), nullable=False)
+
+    entry_price = Column(DECIMAL(20, 8), nullable=False)
+    avg_entry_price = Column(DECIMAL(20, 8))
+    exit_price = Column(DECIMAL(20, 8), nullable=False)
+    avg_exit_price = Column(DECIMAL(20, 8))
+    quantity = Column(DECIMAL(20, 8), nullable=False)
+
+    pnl_usdt = Column(DECIMAL(20, 8))
+    pnl_pct = Column(DECIMAL(20, 8))
+
+    opened_at_utc = Column(DateTime, nullable=False)
+    closed_at_utc = Column(DateTime, nullable=False)
+
+    exit_reason = Column(String(32))
+    tp1_hit = Column(Boolean, nullable=False, default=False)
+    tp2_hit = Column(Boolean, nullable=False, default=False)
+    position_management_json = Column(JSON)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class Log(Base):
+    __tablename__ = "logs"
+    __table_args__ = (
+        Index("idx_logs_ts", "timestamp"),
+        Index("idx_logs_level", "level"),
+        Index("idx_logs_source", "source"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False)
+    level = Column(String(16), nullable=False)
+    source = Column(String(64), nullable=False)
+    message = Column(String(1024), nullable=False)
+    context = Column(JSON)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RiskEvent(Base):
+    __tablename__ = "risk_events"
+    __table_args__ = (
+        Index("idx_risk_events_ts", "timestamp"),
+        Index("idx_risk_events_symbol", "symbol"),
+        Index("idx_risk_events_type", "event_type"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False)
+    event_type = Column(String(64), nullable=False)
+    symbol = Column(String(20), nullable=False)
+    details = Column(String(1024), nullable=False)
+    details_json = Column(JSON)
 
 
 class Order(Base):

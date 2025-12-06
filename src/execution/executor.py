@@ -1,23 +1,29 @@
-import time
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Dict, Any
+import logging
+import sys
 
-from sqlalchemy.orm import Session
+from src.db.session import SessionLocal
+from src.execution.execution_loop import run_single_cycle
 
 from src.core.config_loader import load_config
 from src.execution.state_manager import load_state, save_state
 from src.db.models import Order
 
-
-_config = load_config()
-_trading_cfg: Dict[str, Any] = _config.get("trading", {}) or {}
+logger = logging.getLogger(__name__)
 
 
-def _now_ms() -> int:
-    return int(time.time() * 1000)
+def main(symbol: str = "BTCUSDT") -> None:
+    """Thin cron-safe entrypoint that runs a single execution cycle and exits."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    try:
+        run_single_cycle(db_session_factory=SessionLocal, symbol=symbol)
+    except Exception:
+        logger.exception("Execution cycle failed")
+        sys.exit(1)
 
 
+if __name__ == "__main__":
+    main()
 def _get_trading_param(name: str, default: float) -> Decimal:
     value = _trading_cfg.get(name, default)
     return Decimal(str(value))
