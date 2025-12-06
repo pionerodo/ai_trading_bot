@@ -24,7 +24,6 @@ logs/
 *.iml
 
 # Data snapshots (опционально)
-data/*.json
 !data/examples/**
 
 # System files
