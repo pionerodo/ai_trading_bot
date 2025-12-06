@@ -1,31 +1,52 @@
-# Python caches
+# ============================
+# Python caches / bytecode
+# ============================
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 
-# Virtual env
+# ============================
+# Virtual environments
+# ============================
 venv/
 .env
 *.env
 
-# Logs & runtime
+# ============================
+# Logs & runtime files
+# ============================
 logs/
 *.log
 
-# Compiled
+# ============================
+# Compiled extensions
+# ============================
 *.so
 *.dll
 *.dylib
 
-# IDE / Editor
+# ============================
+# IDE / Editor configs
+# ============================
 .vscode/
 .idea/
 *.iml
 
-# Data snapshots (опционально)
-!data/examples/**
+# ============================
+# Auto-generated market data
+# (cron tasks produce JSON snapshots; 
+#  DO NOT store them in GitHub)
+# ============================
+data/*.json
+data/**/*.json
 
+# Leave an example directory explicitly tracked
+!data/examples/
+!data/examples/*.json
+
+# ============================
 # System files
+# ============================
 .DS_Store
 Thumbs.db
