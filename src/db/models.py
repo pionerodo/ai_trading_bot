@@ -183,10 +183,7 @@ class Order(Base):
     exchange_order_id = Column(BigInteger)
     client_order_id = Column(String(64), nullable=False)
     symbol = Column(String(20), nullable=False)
-    role = Column(
-        Enum("entry", "sl", "tp1", "tp2", "liq_exit", "manual_exit"),
-        nullable=False,
-    )
+    role = Column(Enum("entry", "sl", "tp1", "tp2", "liq_exit", "manual_exit"), nullable=False)
     side = Column(Enum("buy", "sell"), nullable=False)
     order_type = Column(String(32), nullable=False)
     status = Column(String(32), nullable=False)
@@ -199,12 +196,7 @@ class Order(Base):
     executed_qty = Column(DECIMAL(20, 8), nullable=False, default=0)
     avg_fill_price = Column(DECIMAL(20, 8))
     created_at_utc = Column(DateTime, nullable=False, server_default=func.now())
-    updated_at_utc = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
+    updated_at_utc = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     json_data = Column(JSON)
 
 
@@ -271,3 +263,22 @@ class RiskEvent(Base):
     symbol = Column(String(20), nullable=False)
     details = Column(String(1024), nullable=False)
     details_json = Column(JSON)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class EquityCurve(Base):
+    __tablename__ = "equity_curve"
+    __table_args__ = (
+        Index("idx_equity_timestamp", "timestamp"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False)
+    symbol = Column(String(20), nullable=False, default="BTCUSDT")
+    equity_usdt = Column(DECIMAL(20, 8), nullable=False)
+    balance_usdt = Column(DECIMAL(20, 8))
+    unrealized_pnl = Column(DECIMAL(20, 8))
+    realized_pnl = Column(DECIMAL(20, 8))
+    daily_pnl = Column(DECIMAL(20, 8))
+    weekly_pnl = Column(DECIMAL(20, 8))
+    created_at = Column(DateTime, nullable=False, server_default=func.now())

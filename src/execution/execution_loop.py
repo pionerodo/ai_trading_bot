@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from src.analytics_engine.risk_state import RiskStateService
 from src.db.models import Decision, LiquidationZone, Position, Snapshot
 from src.execution.execution_logger import log_execution_event, log_risk_event
 from src.execution.order_manager import OrderManager
@@ -173,7 +174,10 @@ def apply_trailing_sl(
 
     # Optional activation: only trail after RR threshold beyond entry
     if activation_rr > 0 and entry_price > 0:
-        rr_move = (current_price - entry_price) / entry_price if position.side == "long" else (entry_price - current_price) / entry_price
+        if position.side == "long":
+            rr_move = (current_price - entry_price) / entry_price
+        else:
+            rr_move = (entry_price - current_price) / entry_price
         if rr_move < activation_rr:
             return
 
@@ -228,6 +232,7 @@ def _parse_position_management(position_management_json):
 def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
     position_manager = PositionManager(db_session_factory, symbol=symbol)
     order_manager = OrderManager(db_session_factory, symbol=symbol)
+    risk_service = RiskStateService(db_session_factory)
 
     open_position = position_manager.get_open_position()
     decision = load_latest_decision_for_symbol(db_session_factory, symbol=symbol)
@@ -235,6 +240,42 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
     if open_position is None:
         if decision is None:
             logger.info("No open position and no new decision for %s", symbol)
+            return
+
+        now_utc = datetime.utcnow()
+        risk_state = risk_service.get_current_state(symbol, now_utc)
+        if not risk_state.get("can_trade", True):
+            reasons = risk_state.get("reasons", [])
+            logger.warning(
+                "Decision %s blocked by global risk: %s",
+                decision.get("decision_id"),
+                "; ".join(reasons),
+            )
+            log_risk_event(
+                db_session_factory,
+                event_type="ENTRY_BLOCKED_GLOBAL_RISK",
+                symbol=symbol,
+                details="; ".join(reasons) or "blocked by global risk",
+                extra={
+                    "decision_id": decision.get("decision_id"),
+                    "risk_mode": risk_state.get("risk_mode"),
+                    "daily_dd_pct": str(risk_state.get("daily_dd_pct")),
+                    "weekly_dd_pct": str(risk_state.get("weekly_dd_pct")),
+                    "trades_today": risk_state.get("trades_today"),
+                    "losing_streak": risk_state.get("losing_streak"),
+                },
+            )
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="WARNING",
+                message="ENTRY_BLOCKED_GLOBAL_RISK",
+                context={
+                    "decision_id": decision.get("decision_id"),
+                    "reasons": reasons,
+                    "risk_mode": risk_state.get("risk_mode"),
+                },
+            )
             return
 
         risk_result = evaluate_local_entry_risk(decision)
@@ -260,25 +301,23 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
             return
 
         position = position_manager.create_from_decision(decision)
-        entry_order = order_manager.build_entry_order(position, decision)
-        sl_order = order_manager.build_sl_order(position) if position.sl_price else None
-        tp1_order, tp2_order = order_manager.build_tp_orders(position)
-
-        order_manager.place_or_update(entry_order)
-        if sl_order:
-            order_manager.place_or_update(sl_order)
-        if tp1_order:
-            order_manager.place_or_update(tp1_order)
-        if tp2_order:
-            order_manager.place_or_update(tp2_order)
+        entry_order = order_manager.place_entry_order(position, decision)
+        if position.sl_price:
+            order_manager.place_sl_order(position)
+        size_dec = Decimal(str(position.size))
+        tp1_qty = size_dec / Decimal("2")
+        if position.tp1_price:
+            order_manager.place_tp1_order(position, qty=tp1_qty if position.tp2_price else size_dec)
+        if position.tp2_price:
+            order_manager.place_tp2_order(position, qty=size_dec - tp1_qty)
 
         logger.info(
             "Position %s created with entry order %s (sl=%s tp1=%s tp2=%s)",
             position.id,
-            entry_order.id,
-            sl_order.id if sl_order else None,
-            tp1_order.id if tp1_order else None,
-            tp2_order.id if tp2_order else None,
+            entry_order.client_order_id,
+            position.sl_price,
+            position.tp1_price,
+            position.tp2_price,
         )
         return
 
@@ -286,6 +325,8 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
     if current_price is None:
         logger.warning("No latest price for %s, skipping exit checks", symbol)
         return
+
+    order_manager.update_orders_status(open_position.id)
 
     sl = _as_decimal(open_position.sl_price) if open_position.sl_price is not None else None
     tp1 = _as_decimal(open_position.tp1_price) if open_position.tp1_price is not None else None
@@ -305,24 +346,44 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
     # Exit check order: SL -> TP2 -> TP1 -> liquidation-based exit -> trailing/BE adjustments
     if open_position.side == "long":
         if sl is not None and current_price <= sl:
-            position_manager.close_position(
+            _market_exit(order_manager, open_position)
+            closed_pos, trade = position_manager.close_position(
                 open_position.id,
                 exit_price=current_price,
                 ts_utc=datetime.utcnow(),
                 exit_reason="sl",
             )
+            risk_service.update_equity_after_trade(trade)
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="INFO",
+                message="EQUITY_UPDATED_AFTER_TRADE",
+                context={"trade_id": trade.id, "position_id": closed_pos.id},
+            )
+            order_manager.cancel_stale_orders(open_position.id)
             logger.info(
                 "Closed long position %s via SL at price %s", open_position.id, current_price
             )
             return
 
         if tp2 is not None and current_price >= tp2:
-            position_manager.close_position(
+            _market_exit(order_manager, open_position)
+            closed_pos, trade = position_manager.close_position(
                 open_position.id,
                 exit_price=current_price,
                 ts_utc=datetime.utcnow(),
                 exit_reason="tp2",
             )
+            risk_service.update_equity_after_trade(trade)
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="INFO",
+                message="EQUITY_UPDATED_AFTER_TRADE",
+                context={"trade_id": trade.id, "position_id": closed_pos.id},
+            )
+            order_manager.cancel_stale_orders(open_position.id)
             logger.info(
                 "Closed long position %s via TP2 at price %s", open_position.id, current_price
             )
@@ -338,24 +399,44 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
             open_position = move_sl_to_breakeven_if_needed(position_manager, open_position)
     else:  # short
         if sl is not None and current_price >= sl:
-            position_manager.close_position(
+            _market_exit(order_manager, open_position)
+            closed_pos, trade = position_manager.close_position(
                 open_position.id,
                 exit_price=current_price,
                 ts_utc=datetime.utcnow(),
                 exit_reason="sl",
             )
+            risk_service.update_equity_after_trade(trade)
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="INFO",
+                message="EQUITY_UPDATED_AFTER_TRADE",
+                context={"trade_id": trade.id, "position_id": closed_pos.id},
+            )
+            order_manager.cancel_stale_orders(open_position.id)
             logger.info(
                 "Closed short position %s via SL at price %s", open_position.id, current_price
             )
             return
 
         if tp2 is not None and current_price <= tp2:
-            position_manager.close_position(
+            _market_exit(order_manager, open_position)
+            closed_pos, trade = position_manager.close_position(
                 open_position.id,
                 exit_price=current_price,
                 ts_utc=datetime.utcnow(),
                 exit_reason="tp2",
             )
+            risk_service.update_equity_after_trade(trade)
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="INFO",
+                message="EQUITY_UPDATED_AFTER_TRADE",
+                context={"trade_id": trade.id, "position_id": closed_pos.id},
+            )
+            order_manager.cancel_stale_orders(open_position.id)
             logger.info(
                 "Closed short position %s via TP2 at price %s", open_position.id, current_price
             )
@@ -375,11 +456,20 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
         zone_price = _as_decimal(liq_zone.price_level)
 
         if open_position.side == "long" and current_price <= zone_price:
-            pm_close, _ = position_manager.close_position(
+            _market_exit(order_manager, open_position)
+            pm_close, trade = position_manager.close_position(
                 open_position.id,
                 exit_price=current_price,
                 ts_utc=datetime.utcnow(),
                 exit_reason="liq_exit",
+            )
+            risk_service.update_equity_after_trade(trade)
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="INFO",
+                message="EQUITY_UPDATED_AFTER_TRADE",
+                context={"trade_id": trade.id if trade else None, "position_id": pm_close.id},
             )
             with db_session_factory() as session:  # type: Session
                 db_pos = session.get(Position, pm_close.id)
@@ -387,7 +477,7 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
                     db_pos.liq_exit_used = True
                     session.commit()
 
-            order_manager.cancel_stale_for_position(open_position.id)
+            order_manager.cancel_stale_orders(open_position.id)
             logger.info(
                 "Liq-exit triggered for long position %s (cluster=%s zone=%s current=%s)",
                 open_position.id,
@@ -413,11 +503,20 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
             return
 
         if open_position.side == "short" and current_price >= zone_price:
-            pm_close, _ = position_manager.close_position(
+            _market_exit(order_manager, open_position)
+            pm_close, trade = position_manager.close_position(
                 open_position.id,
                 exit_price=current_price,
                 ts_utc=datetime.utcnow(),
                 exit_reason="liq_exit",
+            )
+            risk_service.update_equity_after_trade(trade)
+            log_execution_event(
+                db_session_factory,
+                module="execution_loop",
+                level="INFO",
+                message="EQUITY_UPDATED_AFTER_TRADE",
+                context={"trade_id": trade.id if trade else None, "position_id": pm_close.id},
             )
             with db_session_factory() as session:  # type: Session
                 db_pos = session.get(Position, pm_close.id)
@@ -425,7 +524,7 @@ def run_single_cycle(db_session_factory, symbol: str = "BTCUSDT") -> None:
                     db_pos.liq_exit_used = True
                     session.commit()
 
-            order_manager.cancel_stale_for_position(open_position.id)
+            order_manager.cancel_stale_orders(open_position.id)
             logger.info(
                 "Liq-exit triggered for short position %s (cluster=%s zone=%s current=%s)",
                 open_position.id,
@@ -475,6 +574,33 @@ def run_loop(
         if time.time() - start >= max_seconds:
             break
         time.sleep(sleep_seconds)
+
+
+def _market_exit(order_manager: OrderManager, position) -> None:
+    """Send a market exit to Binance to flatten the position if possible."""
+    side = "sell" if position.side == "long" else "buy"
+    qty = float(position.size or 0)
+    if qty <= 0:
+        return
+
+    client_id = f"{position.decision_id}_{position.id}_close"
+    try:
+        order_manager.binance.send_market_order(order_manager.symbol, side=side, qty=qty, clientOrderId=client_id)
+        log_execution_event(
+            order_manager.db_session_factory,
+            module="execution_loop",
+            level="INFO",
+            message="MARKET_EXIT_SENT",
+            context={"position_id": position.id, "side": side, "qty": qty},
+        )
+    except Exception as exc:  # noqa: BLE001
+        log_risk_event(
+            order_manager.db_session_factory,
+            event_type="MARKET_EXIT_FAILED",
+            symbol=order_manager.symbol,
+            details=str(exc),
+            extra={"position_id": position.id, "side": side, "qty": qty},
+        )
 
 
 def _as_decimal(value) -> Decimal:

@@ -10,10 +10,7 @@ logger = logging.getLogger(__name__)
 
 def main(symbol: str = "BTCUSDT") -> None:
     """Thin cron-safe entrypoint that runs a single execution cycle and exits."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     try:
         run_single_cycle(db_session_factory=SessionLocal, symbol=symbol)
