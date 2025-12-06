@@ -31,6 +31,25 @@ def _sign_from_value(value: float) -> str:
     return "flat"
 
 
+def _clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
+    return max(min_value, min(max_value, value))
+
+
+def _load_news_sentiment(base_dir: Path) -> Optional[Dict[str, Any]]:
+    sentiment_path = base_dir / "data" / "news_sentiment.json"
+    data = _safe_load_json(sentiment_path, {})
+    if not isinstance(data, dict) or "score" not in data:
+        return None
+    try:
+        return {
+            "score": float(data.get("score", 0.0)),
+            "comment": data.get("comment") or data.get("summary"),
+            "captured_at": data.get("captured_at"),
+        }
+    except Exception:
+        return None
+
+
 def _build_basic_flow_from_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     """
     Фолбэк, если btc_flow.json ещё нет.
@@ -80,6 +99,111 @@ def _build_basic_flow_from_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         "reasons": ["basic_flow_from_snapshot"],
     }
     return flow
+
+
+def _compute_crowd_bias(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    ms = snapshot.get("market_structure") or {}
+    mom = snapshot.get("momentum") or {}
+
+    bullish_votes = 0
+    bearish_votes = 0
+
+    for tf in ("tf_5m", "tf_15m", "tf_1h"):
+        structure = (ms.get(tf) or {}).get("value")
+        if structure == "HH-HL":
+            bullish_votes += 1
+        elif structure == "LL-LH":
+            bearish_votes += 1
+
+        momentum_state = (mom.get(tf) or {}).get("state")
+        if momentum_state == "impulse_up":
+            bullish_votes += 1
+        elif momentum_state == "impulse_down":
+            bearish_votes += 1
+
+    if bullish_votes > bearish_votes:
+        bias = "bullish"
+    elif bearish_votes > bullish_votes:
+        bias = "bearish"
+    else:
+        bias = "neutral"
+
+    total_votes = bullish_votes + bearish_votes or 1
+    score = max(bullish_votes, bearish_votes) / total_votes
+
+    return {
+        "bias": bias,
+        "score": round(score, 3),
+        "trend": (ms.get("tf_5m") or {}).get("value", "unclear"),
+    }
+
+
+def _compute_trap_index(crowd_bias: str, liq_summary: Optional[Dict[str, Any]]) -> float:
+    if not liq_summary:
+        return 0.0
+
+    dominant = (liq_summary.get("dominant_side") or "").lower()
+    if dominant == "bulls":
+        liq_bias = "bullish"
+    elif dominant == "bears":
+        liq_bias = "bearish"
+    else:
+        liq_bias = "neutral"
+
+    if crowd_bias == "bullish" and liq_bias == "bullish":
+        return -0.15  # риск лонг-трапа
+    if crowd_bias == "bearish" and liq_bias == "bearish":
+        return 0.15   # риск шорт-трапа
+    return 0.0
+
+
+def _compute_risk_block(snapshot: Dict[str, Any], flow: Dict[str, Any]) -> Dict[str, Any]:
+    session = (snapshot.get("session") or {})
+    vol_regime = (session.get("volatility_regime") or "unknown").lower()
+    crowd = (flow.get("crowd") or {})
+    warnings = flow.get("warnings") or []
+
+    base_score = 0.5
+    if crowd.get("bias") == "bullish" or crowd.get("bias") == "bearish":
+        base_score += 0.05
+    if vol_regime == "low":
+        base_score -= 0.05
+    elif vol_regime == "high":
+        base_score -= 0.15
+
+    if warnings:
+        base_score -= 0.1
+
+    base_score = max(0.0, min(1.0, base_score))
+
+    if base_score < 0.25:
+        mode = "risk_off"
+    elif base_score < 0.45:
+        mode = "neutral"
+    elif base_score < 0.7:
+        mode = "cautious_risk_on"
+    else:
+        mode = "aggressive_risk_on"
+
+    return {"global_score": round(base_score, 3), "mode": mode}
+
+
+def _build_warnings(flow: Dict[str, Any], snapshot: Dict[str, Any]) -> List[str]:
+    warnings: List[str] = []
+
+    session = snapshot.get("session") or {}
+    if (session.get("volatility_regime") or "").lower() == "high":
+        warnings.append("volatility_high")
+
+    etp_summary = flow.get("etp_summary") or {}
+    if (etp_summary.get("signal") or "") in {"heavy_outflow", "bearish"}:
+        warnings.append("etf_outflow_headwind")
+
+    liq_summary = flow.get("liq_summary") or {}
+    if (liq_summary.get("dominant_side") or "").lower() == "bears":
+        warnings.append("liq_cluster_above_price")
+
+    return warnings
 
 
 def _build_etp_summary(base_dir: Path) -> Optional[Dict[str, Any]]:
@@ -243,6 +367,32 @@ def build_market_flow(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     liq_summary = _build_liq_summary(base_dir)
     if liq_summary is not None:
         flow["liq_summary"] = liq_summary
+
+    # 3.1) Crowd bias and trap index
+    flow["crowd"] = _compute_crowd_bias(snapshot)
+    flow["crowd_trap_index"] = _compute_trap_index(
+        flow["crowd"]["bias"], liq_summary
+    )
+
+    # 3.2) News sentiment
+    sentiment = _load_news_sentiment(base_dir)
+    if sentiment:
+        flow["news_sentiment"] = sentiment
+
+    # 3.3) Derivatives snapshot from snapshot.derivatives
+    derivatives = snapshot.get("derivatives") or {}
+    if derivatives:
+        flow["derivatives"] = derivatives
+
+    # 3.4) Warnings and risk scoring
+    flow["warnings"] = _build_warnings(flow, snapshot)
+    flow["risk"] = _compute_risk_block(snapshot, flow)
+
+    # 3.5) Alignment score combines structure + flow supports
+    crowd_score = float(flow.get("crowd", {}).get("score", 0.5) or 0.5)
+    etp_signal = (etp_summary or {}).get("signal")
+    etp_bonus = 0.05 if etp_signal in {"bullish", "heavy_inflow"} else -0.05 if etp_signal in {"bearish", "heavy_outflow"} else 0.0
+    flow["alignment_score"] = round(_clamp(crowd_score + etp_bonus), 3)
 
     # 4) Если нет reasons — соберём простое текстовое резюме
     if not flow.get("reasons"):
