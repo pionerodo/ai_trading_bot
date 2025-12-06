@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.core.config_loader import load_config
 from src.execution.state_manager import load_state, save_state
-from src.db.models import Execution
+from src.db.models import Order
 
 
 _config = load_config()
@@ -25,14 +25,13 @@ def _get_trading_param(name: str, default: float) -> Decimal:
 
 def _compute_today_realized_pnl(db: Session) -> Decimal:
     """
-    Суммируем реализованный PnL за текущие сутки по записям executions
-    с json_data["pnl"] (по времени UTC).
+    Суммируем реализованный PnL за текущие сутки по записям orders,
+    где json_data содержит pnl (Fallback для симуляции).
     """
     now = datetime.now(timezone.utc)
     start_of_day = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-    start_ms = int(start_of_day.timestamp() * 1000)
 
-    q = db.query(Execution).filter(Execution.timestamp_ms >= start_ms)
+    q = db.query(Order).filter(Order.created_at >= start_of_day)
 
     total = Decimal("0")
     for row in q:
@@ -41,6 +40,18 @@ def _compute_today_realized_pnl(db: Session) -> Decimal:
         if pnl is not None:
             total += Decimal(str(pnl))
     return total
+
+
+def _is_decision_stale(decision: dict, max_age_sec: int = 600) -> bool:
+    ts_iso = decision.get("timestamp_iso") or decision.get("timestamp")
+    if not ts_iso:
+        return True
+    try:
+        ts = datetime.fromisoformat(str(ts_iso).replace("Z", "+00:00"))
+    except Exception:
+        return True
+    age_sec = (datetime.now(timezone.utc) - ts).total_seconds()
+    return age_sec > max_age_sec
 
 
 def _log_execution(
@@ -53,20 +64,36 @@ def _log_execution(
     pnl: Decimal | None = None,
 ) -> None:
     """
-    Пишем запись в executions (open/close) с возможным PnL.
+    Записываем исполнение в orders как FILLED, соответствуя схеме orders/trades.
     """
     json_data: Dict[str, Any] = {"type": kind}
     if pnl is not None:
         json_data["pnl"] = float(pnl)
 
-    row = Execution(
-        timestamp_ms=_now_ms(),
+    now_dt = datetime.now(timezone.utc)
+    client_id = f"sim_{kind}_{int(now_dt.timestamp())}"
+
+    row = Order(
+        binance_order_id=None,
+        client_order_id=client_id,
         symbol=symbol,
-        side=side,
-        price=price,
-        qty=qty,
+        side="BUY" if side.upper() == "LONG" else "SELL",
+        type="MARKET",
+        time_in_force="GTC",
+        decision_id=None,
+        position_id=None,
         status="FILLED",
-        exchange_order_id=None,
+        created_at_exchange=now_dt,
+        updated_at_exchange=now_dt,
+        price=Decimal(str(price)),
+        orig_qty=Decimal(str(qty)),
+        executed_qty=Decimal(str(qty)),
+        cumulative_quote=Decimal(str(float(price) * float(qty))),
+        is_entry=1 if kind == "open" else 0,
+        is_sl=1 if kind == "sl" else 0,
+        is_tp=1 if kind == "close" and pnl and pnl > 0 else 0,
+        created_at=now_dt,
+        updated_at=now_dt,
         json_data=json_data,
     )
     db.add(row)
@@ -88,11 +115,13 @@ def execute_decision(db: Session, decision: dict, price: float):
 
     equity = Decimal(str(state.get("equity", 0) or 0))
     qty_current = Decimal(str(state.get("qty", 0) or 0))
+    price_dec = Decimal(str(price))
 
-    action = decision.get("action", "FLAT")
+    action = str(decision.get("action", "flat")).upper()
     confidence = float(decision.get("confidence", 0.0) or 0.0)
-    risk_block = decision.get("risk") or {}
-    risk_level = int(risk_block.get("level", 1))
+    risk_level = int(decision.get("risk_level", 1) or 0)
+    risk_checks = decision.get("risk_checks") or {}
+    entry_zone = decision.get("entry_zone") or []
 
     # ---- параметры риска из конфига ----
     max_risk_pct = _get_trading_param("max_risk_pct_per_trade", 0.01)
@@ -172,6 +201,11 @@ def execute_decision(db: Session, decision: dict, price: float):
         position = "NONE"
         qty_current = Decimal("0")
 
+    # Проверка свежести решения после определения функций управления позицией
+    if _is_decision_stale(decision):
+        close_position_if_any()
+        return
+
     # ---- ограничения на НОВЫЕ входы ----
     MIN_CONF = 0.6
 
@@ -181,6 +215,8 @@ def execute_decision(db: Session, decision: dict, price: float):
     if confidence < MIN_CONF:
         can_open_new = False
     if hard_daily_risk_off:
+        can_open_new = False
+    if any(v is False for v in risk_checks.values()):
         can_open_new = False
 
     # ---- обрабатываем действие ----
@@ -199,6 +235,11 @@ def execute_decision(db: Session, decision: dict, price: float):
     # 3) Если нельзя открывать новые позиции — на этом всё
     if not can_open_new:
         return
+
+    if entry_zone and len(entry_zone) == 2:
+        lower, upper = Decimal(str(entry_zone[0])), Decimal(str(entry_zone[1]))
+        if price_dec < lower * Decimal("0.995") or price_dec > upper * Decimal("1.005"):
+            return
 
     # 4) Если уже в нужной стороне и qty > 0 — ничего не делаем
     if state.get("position") == desired_pos and qty_current > 0:
@@ -220,7 +261,7 @@ def execute_decision(db: Session, decision: dict, price: float):
     if target_notional <= 0:
         return
 
-    qty_new = target_notional / Decimal(str(price))
+    qty_new = target_notional / price_dec
     # Округляем до 0.0001 BTC
     qty_new = qty_new.quantize(Decimal("0.0001"))
 
@@ -228,16 +269,20 @@ def execute_decision(db: Session, decision: dict, price: float):
         return
 
     # 6) Открываем виртуальную позицию и сохраняем SL/TP
-    if desired_pos == "LONG":
-        stop_loss = float(Decimal(str(price)) * (Decimal("1") - assumed_stop_pct))
-        take_profit = float(
-            Decimal(str(price)) * (Decimal("1") + assumed_stop_pct * Decimal("2"))
-        )
-    else:  # SHORT
-        stop_loss = float(Decimal(str(price)) * (Decimal("1") + assumed_stop_pct))
-        take_profit = float(
-            Decimal(str(price)) * (Decimal("1") - assumed_stop_pct * Decimal("2"))
-        )
+    decision_sl = decision.get("sl")
+    decision_tp = decision.get("tp1") or decision.get("tp2")
+
+    if decision_sl is None:
+        if desired_pos == "LONG":
+            decision_sl = float(Decimal(str(price)) * (Decimal("1") - assumed_stop_pct))
+        else:
+            decision_sl = float(Decimal(str(price)) * (Decimal("1") + assumed_stop_pct))
+
+    if decision_tp is None:
+        if desired_pos == "LONG":
+            decision_tp = float(Decimal(str(price)) * (Decimal("1") + assumed_stop_pct * Decimal("2")))
+        else:
+            decision_tp = float(Decimal(str(price)) * (Decimal("1") - assumed_stop_pct * Decimal("2")))
 
     state.update(
         {
@@ -245,8 +290,8 @@ def execute_decision(db: Session, decision: dict, price: float):
             "entry_price": float(price),
             "entry_time": now_ms,
             "qty": float(qty_new),
-            "stop_loss": stop_loss,
-            "take_profit": take_profit,
+            "stop_loss": float(decision_sl),
+            "take_profit": float(decision_tp),
             "equity": float(equity),
             "updated_at": now_ms,
         }
