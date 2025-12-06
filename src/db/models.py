@@ -183,7 +183,10 @@ class Order(Base):
     exchange_order_id = Column(BigInteger)
     client_order_id = Column(String(64), nullable=False)
     symbol = Column(String(20), nullable=False)
-    role = Column(Enum("entry", "sl", "tp1", "tp2", "liq_exit", "manual_exit"), nullable=False)
+    role = Column(
+        Enum("entry", "sl", "tp1", "tp2", "liq_exit", "manual_exit"),
+        nullable=False,
+    )
     side = Column(Enum("buy", "sell"), nullable=False)
     order_type = Column(String(32), nullable=False)
     status = Column(String(32), nullable=False)
@@ -196,7 +199,12 @@ class Order(Base):
     executed_qty = Column(DECIMAL(20, 8), nullable=False, default=0)
     avg_fill_price = Column(DECIMAL(20, 8))
     created_at_utc = Column(DateTime, nullable=False, server_default=func.now())
-    updated_at_utc = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_at_utc = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
     json_data = Column(JSON)
 
 
@@ -263,55 +271,3 @@ class RiskEvent(Base):
     symbol = Column(String(20), nullable=False)
     details = Column(String(1024), nullable=False)
     details_json = Column(JSON)
-
-
-class Order(Base):
-    __tablename__ = "orders"
-    __table_args__ = (
-        UniqueConstraint("client_order_id", name="uq_orders_client_order"),
-        Index("idx_orders_decision", "decision_id"),
-        Index("idx_orders_symbol_status", "symbol", "status"),
-        Index("idx_orders_exchange_order", "binance_order_id"),
-    )
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    binance_order_id = Column(BigInteger)
-    client_order_id = Column(String(64), nullable=False)
-    symbol = Column(String(20), nullable=False)
-    side = Column(Enum("BUY", "SELL"), nullable=False)
-    type = Column(String(32), nullable=False)
-    time_in_force = Column(String(8))
-    decision_id = Column(BigInteger)
-    position_id = Column(BigInteger)
-    status = Column(String(32), nullable=False)
-    created_at_exchange = Column(DateTime)
-    updated_at_exchange = Column(DateTime)
-    price = Column(DECIMAL(20, 8), nullable=False)
-    orig_qty = Column(DECIMAL(20, 8), nullable=False)
-    executed_qty = Column(DECIMAL(20, 8), nullable=False, default=0)
-    cumulative_quote = Column(DECIMAL(20, 8), nullable=False, default=0)
-    is_entry = Column(Boolean, nullable=False, default=False)
-    is_sl = Column(Boolean, nullable=False, default=False)
-    is_tp = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-    json_data = Column(JSON)
-
-
-class Trade(Base):
-    __tablename__ = "trades"
-    __table_args__ = (Index("idx_trades_order", "order_id"),)
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    order_id = Column(BigInteger, nullable=False)
-    binance_trade_id = Column(BigInteger)
-    symbol = Column(String(20), nullable=False)
-    side = Column(Enum("BUY", "SELL"), nullable=False)
-    price = Column(DECIMAL(20, 8), nullable=False)
-    qty = Column(DECIMAL(20, 8), nullable=False)
-    quote_qty = Column(DECIMAL(20, 8), nullable=False)
-    commission = Column(DECIMAL(20, 8))
-    commission_asset = Column(String(16))
-    realized_pnl = Column(DECIMAL(20, 8))
-    exec_time = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
