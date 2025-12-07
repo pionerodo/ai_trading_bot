@@ -1,429 +1,603 @@
-# AI Trading Bot – DATABASE_SCHEMA.md (v2.0, synced with live DB)
+# AI Trading Showdown Bot – Database Schema (MariaDB)
 
-**Status:** This document describes the *actual* MariaDB schema of the `ai_trading_bot` database as of the latest migration. All `CREATE TABLE` definitions below are taken directly from the live DB dump.**
-
----
-
-## 1. General Notes
-
-- DB engine: MariaDB / MySQL (InnoDB tables).
-- Charset: `utf8mb4` (для части таблиц — `utf8mb3`, как в реальной БД).
-- All timestamps are stored in UTC (either `DATETIME`, `TIMESTAMP` or `BIGINT` in ms).
-- JSON-поля храним как `LONGTEXT` + `CHECK (json_valid(...))`, либо как сырой текст.
-- Логика и назначение таблиц описаны в остальных документах ТЗ (DATA_PIPELINE.md, DECISION_ENGINE.md, EXECUTION_ENGINE.md, RISK_MANAGER.md).
+Version: 1.0  
+Status: Designed to match ARCHITECTURE, DATA_PIPELINE, DECISION_ENGINE, EXECUTION_ENGINE and RISK_MANAGER specs.
 
 ---
 
-## 2. Tables Overview
+## 1. Purpose
 
-Ниже перечислены все таблицы, существующие в БД `ai_trading_bot`:
+This document defines the **relational schema** for the AI Trading Showdown Bot using **MariaDB** as the primary data store.
 
-- `bot_state`
-- `candles`
-- `decisions`
-- `derivatives`
-- `equity_curve`
-- `etp_flows`
-- `executions`
-- `flows`
-- `liquidation_zones`
-- `logs`
-- `market_flow`
-- `news_sentiment_history`
-- `notifications`
-- `orders`
-- `positions`
-- `reconciliation_events`
-- `risk_events`
-- `snapshots`
-- `trades`
+Goals:
 
-Ниже для каждой таблицы приведён её фактический `CREATE TABLE` из дампа.
+- store all **historical data** required for:
+  - live analytics,
+  - decision-making,
+  - execution and reconciliation,
+  - performance & risk analysis,
+  - backtesting;
+- keep data **normalized** where it matters and **denormalized** where it accelerates analytics;
+- use correct **numeric types** (DECIMAL) for money and prices;
+- ensure proper **indexing** for time-series queries.
+
+JSON files (`btc_snapshot.json`, `btc_flow.json`, etc.) are only last-state snapshots.  
+**MariaDB is the source of truth** for all historical data.
 
 ---
 
-## 3. Таблица `bot_state`
+## 2. General Design Principles
+
+1. **Time in UTC**
+   - All timestamps stored as `DATETIME` or `TIMESTAMP` in UTC.
+   - Application layer is responsible for local timezone conversions.
+
+2. **Numeric Precision**
+   - Prices and quantities → `DECIMAL(20, 8)`.
+   - Funding, percentages → `DECIMAL(10, 8)` or similar.
+   - Equity/PnL → `DECIMAL(20, 8)`.
+
+3. **Primary Keys**
+   - Synthetic integer PKs (`BIGINT UNSIGNED AUTO_INCREMENT`) for most tables.
+   - Composite keys where natural (e.g. `symbol + timeframe + open_time`).
+
+4. **Indexes**
+   - Every time-series table indexed by:
+     - `symbol` + `time` (often composite).
+   - Additional indexes for:
+     - `decision_id`, `order_id`, `position_id`,
+     - severity in logs.
+
+5. **Retention**
+   - 1m candles: 6–12 months minimum.
+   - Other data: 1–2 years or more, depending on disk.
+
+---
+
+## 3. Time-Series Market Data
+
+### 3.1 `candles` – OHLCV Data
+
+Stores market candles for BTCUSDT (and optionally other symbols).
 
 ```sql
-CREATE TABLE `bot_state` (
-  `id` int(11) NOT NULL DEFAULT 1,
-  `position` varchar(10) NOT NULL DEFAULT 'NONE',
-  `entry_price` decimal(20,8) DEFAULT NULL,
-  `entry_time` bigint(20) DEFAULT NULL,
-  `qty` decimal(20,8) DEFAULT NULL,
-  `stop_loss` decimal(20,8) DEFAULT NULL,
-  `take_profit` decimal(20,8) DEFAULT NULL,
-  `equity` decimal(20,8) DEFAULT 10000.00000000,
-  `updated_at` bigint(20) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+CREATE TABLE candles (
+    id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol       VARCHAR(20)     NOT NULL,   -- e.g. 'BTCUSDT'
+    timeframe    VARCHAR(10)     NOT NULL,   -- '1m', '5m', '15m', '1h', '4h', '1d'
 
-4. Таблица candles
+    open_time    DATETIME        NOT NULL,   -- candle open time (UTC)
+    close_time   DATETIME        NOT NULL,   -- candle close time (UTC)
 
-CREATE TABLE `candles` (
-  `id` bigint(20) NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `timeframe` varchar(10) NOT NULL,
-  `open_time` bigint(20) NOT NULL,
-  `open` decimal(20,8) NOT NULL,
-  `high` decimal(20,8) NOT NULL,
-  `low` decimal(20,8) NOT NULL,
-  `close` decimal(20,8) NOT NULL,
-  `volume` decimal(20,8) NOT NULL,
-  `close_time` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `unique_candle` (`symbol`,`timeframe`,`open_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    open_price   DECIMAL(20, 8)  NOT NULL,
+    high_price   DECIMAL(20, 8)  NOT NULL,
+    low_price    DECIMAL(20, 8)  NOT NULL,
+    close_price  DECIMAL(20, 8)  NOT NULL,
 
-5. Таблица decisions
+    volume       DECIMAL(28, 12) NOT NULL,   -- base volume
+    quote_volume DECIMAL(28, 12) NULL,       -- quote volume (optional)
 
-CREATE TABLE `decisions` (
-  `id` bigint(20) NOT NULL,
-  `timestamp_ms` bigint(20) NOT NULL,
-  `created_at_utc` datetime DEFAULT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `timeframe` varchar(16) NOT NULL DEFAULT '5m',
-  `action` varchar(10) NOT NULL,
-  `confidence` float NOT NULL,
-  `reason` text DEFAULT NULL,
-  `entry_min` decimal(20,8) DEFAULT NULL,
-  `entry_max` decimal(20,8) DEFAULT NULL,
-  `sl` decimal(20,8) DEFAULT NULL,
-  `tp1` decimal(20,8) DEFAULT NULL,
-  `tp2` decimal(20,8) DEFAULT NULL,
-  `sl_pct` decimal(10,6) DEFAULT NULL,
-  `tp1_rr` decimal(10,4) DEFAULT NULL,
-  `tp2_rr` decimal(10,4) DEFAULT NULL,
-  `position_size_usdt` decimal(20,8) DEFAULT NULL,
-  `leverage` decimal(10,4) DEFAULT NULL,
-  `risk_level` tinyint(4) DEFAULT NULL,
-  `risk_mode` enum('risk_off','cautious','neutral','aggressive') NOT NULL DEFAULT 'neutral',
-  `daily_dd_ok` tinyint(1) NOT NULL DEFAULT 1,
-  `weekly_dd_ok` tinyint(1) NOT NULL DEFAULT 1,
-  `max_trades_per_day_ok` tinyint(1) NOT NULL DEFAULT 1,
-  `session_ok` tinyint(1) NOT NULL DEFAULT 1,
-  `no_major_news` tinyint(1) NOT NULL DEFAULT 1,
-  `liquidation_ok` tinyint(1) NOT NULL DEFAULT 1,
-  `etf_ok` tinyint(1) NOT NULL DEFAULT 1,
-  `liq_tp_zone_id` varchar(64) DEFAULT NULL,
-  `position_management_json` longtext DEFAULT NULL,
-  `snapshot_ref_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `flow_ref_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `json_data` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`json_data`)),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `unique_decision` (`symbol`,`timestamp_ms`),
-  KEY `idx_decisions_symbol_time` (`symbol`,`created_at_utc`),
-  KEY `idx_decisions_action` (`symbol`,`action`,`created_at_utc`),
-  KEY `idx_decisions_risk_mode` (`risk_mode`,`created_at_utc`),
-  KEY `idx_decisions_snapshot` (`snapshot_ref_id`),
-  KEY `idx_decisions_flow` (`flow_ref_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    trades_count BIGINT          NULL,
 
-6. Таблица derivatives
+    UNIQUE KEY uq_candles_symbol_tf_open (symbol, timeframe, open_time),
+    KEY idx_candles_symbol_time (symbol, open_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
 
-CREATE TABLE `derivatives` (
-  `id` bigint(20) NOT NULL,
-  `timestamp_ms` bigint(20) NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `funding_rate` double DEFAULT NULL,
-  `open_interest` double DEFAULT NULL,
-  `long_short_ratio` double DEFAULT NULL,
-  `basis` double DEFAULT NULL,
-  `oi_change_1h` double DEFAULT NULL,
-  `oi_change_4h` double DEFAULT NULL,
-  `volume_24h` double DEFAULT NULL,
-  `taker_buy_ratio` double DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `unique_derivative_record` (`symbol`,`timestamp_ms`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+---
 
-7. Таблица equity_curve
+### 3.2 `derivatives` – OI, Funding, CVD, Basis
 
-CREATE TABLE `equity_curve` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
-  `equity_usdt` decimal(20,8) NOT NULL,
-  `balance_usdt` decimal(20,8) NOT NULL,
-  `open_pnl_usdt` decimal(20,8) NOT NULL,
-  `closed_pnl_usdt` decimal(20,8) NOT NULL,
-  `daily_dd_pct` decimal(10,4) NOT NULL,
-  `weekly_dd_pct` decimal(10,4) NOT NULL,
-  `risk_mode` enum('risk_off','cautious','neutral','aggressive') NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_equity_time` (`captured_at_utc`),
-  KEY `idx_equity_mode` (`risk_mode`,`captured_at_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+Stores key derivatives metrics by time.
 
-8. Таблица etp_flows
+```sql
+CREATE TABLE derivatives (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol          VARCHAR(20)     NOT NULL,   -- 'BTCUSDT'
+    timestamp       DATETIME        NOT NULL,   -- UTC
 
-CREATE TABLE `etp_flows` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `date_utc` date NOT NULL,
-  `source` varchar(64) NOT NULL,
-  `payload_json` longtext NOT NULL,
-  `total_net_flow_usd` decimal(20,2) DEFAULT NULL,
-  `notes` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_etp_symbol_date_source` (`symbol`,`date_utc`,`source`),
-  KEY `idx_etp_date` (`date_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    open_interest   DECIMAL(20, 8)  NULL,
+    funding_rate    DECIMAL(10, 8)  NULL,
+    funding_interval VARCHAR(10)    NULL,      -- e.g. '8h'
 
-9. Таблица executions
+    basis           DECIMAL(20, 8)  NULL,      -- optional
+    basis_pct       DECIMAL(10, 8)  NULL,
 
-CREATE TABLE `executions` (
-  `id` bigint(20) NOT NULL,
-  `timestamp_ms` bigint(20) NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `side` varchar(10) NOT NULL,
-  `price` decimal(20,8) NOT NULL,
-  `qty` decimal(20,8) NOT NULL,
-  `fee` decimal(20,8) DEFAULT NULL,
-  `execution_type` varchar(20) NOT NULL,
-  `json_data` longtext CHARACTER SET utf8mb4 COLLATE=utf8mb4_bin DEFAULT NULL CHECK (json_valid(`json_data`)),
-  PRIMARY KEY (`id`),
-  KEY `idx_executions_symbol_time` (`symbol`,`timestamp_ms`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    cvd_1h          DECIMAL(20, 8)  NULL,
+    cvd_4h          DECIMAL(20, 8)  NULL,
 
-10. Таблица flows
+    extra_json      JSON            NULL,
 
-CREATE TABLE `flows` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
-  `current_price` decimal(20,8) NOT NULL,
-  `etp_net_flow_usd` decimal(20,2) DEFAULT NULL,
-  `crowd_bias_score` decimal(10,4) DEFAULT NULL,
-  `trap_index_score` decimal(10,4) DEFAULT NULL,
-  `risk_global_score` decimal(10,4) DEFAULT NULL,
-  `warnings_json` longtext DEFAULT NULL,
-  `liquidation_json` longtext DEFAULT NULL,
-  `etp_summary_json` longtext DEFAULT NULL,
-  `payload_json` longtext NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_flows_symbol_time` (`symbol`,`captured_at_utc`),
-  KEY `idx_flows_price` (`symbol`,`current_price`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    UNIQUE KEY uq_derivatives_symbol_ts (symbol, timestamp),
+    KEY idx_derivatives_symbol_ts (symbol, timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
 
-11. Таблица liquidation_zones
+---
 
-CREATE TABLE `liquidation_zones` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `source` varchar(64) NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
-  `cluster_id` varchar(64) NOT NULL,
-  `side` enum('long','short') NOT NULL,
-  `price_level` decimal(20,8) NOT NULL,
-  `strength_score` int(11) NOT NULL,
-  `size_btc` decimal(20,8) DEFAULT NULL,
-  `comment` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_liq_symbol_time` (`symbol`,`captured_at_utc`),
-  KEY `idx_liq_symbol_price` (`symbol`,`price_level`),
-  KEY `idx_liq_cluster` (`cluster_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+## 4. ETF Flows, Liquidation Zones, Sentiment
 
-12. Таблица logs
+### 4.1 `etp_flows` – Daily ETF Flows
 
-CREATE TABLE `logs` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `created_at_utc` datetime NOT NULL,
-  `module` varchar(32) NOT NULL,
-  `level` varchar(16) NOT NULL,
-  `message` text NOT NULL,
-  `context_json` longtext DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_logs_time` (`created_at_utc`),
-  KEY `idx_logs_module` (`module`,`created_at_utc`),
-  KEY `idx_logs_level` (`level`,`created_at_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+Represents per-day net flows, as in `btc_etp_flow.json.history`.
 
-13. Таблица market_flow
+```sql
+CREATE TABLE etp_flows (
+    id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol        VARCHAR(20)    NOT NULL,       -- 'BTC'
+    etp_date      DATE           NOT NULL,       -- YYYY-MM-DD
+    net_flow_usd  DECIMAL(20, 2) NOT NULL,       -- net daily flow in USD
 
-CREATE TABLE `market_flow` (
-  `id` bigint(20) NOT NULL,
-  `timestamp_ms` bigint(20) NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `price` decimal(20,8) NOT NULL,
-  `volume` decimal(20,8) DEFAULT NULL,
-  `buy_volume` decimal(20,8) DEFAULT NULL,
-  `sell_volume` decimal(20,8) DEFAULT NULL,
-  `json_data` longtext CHARACTER SET utf8mb4 COLLATE=utf8mb4_bin DEFAULT NULL CHECK (json_valid(`json_data`)),
-  PRIMARY KEY (`id`),
-  KEY `idx_market_flow_symbol_time` (`symbol`,`timestamp_ms`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    created_at    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-14. Таблица news_sentiment_history
+    UNIQUE KEY uq_etp_flows_symbol_date (symbol, etp_date),
+    KEY idx_etp_flows_date (etp_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
 
-CREATE TABLE `news_sentiment_history` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `created_at_utc` datetime NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `source` varchar(64) NOT NULL,
-  `headline` varchar(255) DEFAULT NULL,
-  `sentiment_score` decimal(10,4) NOT NULL,
-  `sentiment_label` enum('very_bearish','bearish','neutral','bullish','very_bullish') NOT NULL,
-  `time_horizon` varchar(32) DEFAULT NULL,
-  `payload_json` longtext DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_nsh_symbol_time` (`symbol`,`created_at_utc`),
-  KEY `idx_nsh_source` (`source`,`created_at_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+Optional aggregated/summarised table (for caching last 3/7 days) is not strictly required if application computes it on the fly.
 
-15. Таблица notifications
+---
 
-CREATE TABLE `notifications` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `created_at_utc` datetime NOT NULL,
-  `channel` varchar(32) NOT NULL,
-  `recipient` varchar(128) DEFAULT NULL,
-  `level` enum('INFO','WARNING','ERROR','CRITICAL') NOT NULL,
-  `category` varchar(64) NOT NULL,
-  `title` varchar(255) DEFAULT NULL,
-  `message` text NOT NULL,
-  `context_json` longtext DEFAULT NULL,
-  `status` enum('pending','sent','failed') NOT NULL DEFAULT 'pending',
-  `sent_at_utc` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_notifications_time` (`created_at_utc`),
-  KEY `idx_notifications_status` (`status`,`created_at_utc`),
-  KEY `idx_notifications_channel` (`channel`,`created_at_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+### 4.2 `liquidation_zones_history` – Liq Map Snapshots
 
-16. Таблица orders
+Stores every snapshot of liquidation clusters.
 
-CREATE TABLE `orders` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `decision_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `exchange_order_id` varchar(64) DEFAULT NULL,
-  `client_order_id` varchar(64) NOT NULL,
-  `role` enum('entry','sl','tp1','tp2','liq_exit','manual_exit') NOT NULL,
-  `side` enum('buy','sell') NOT NULL,
-  `order_type` varchar(32) NOT NULL,
-  `status` varchar(32) NOT NULL,
-  `reason_code` varchar(64) DEFAULT NULL,
-  `price` decimal(20,8) DEFAULT NULL,
-  `stop_price` decimal(20,8) DEFAULT NULL,
-  `orig_qty` decimal(20,8) NOT NULL,
-  `executed_qty` decimal(20,8) NOT NULL DEFAULT 0,
-  `avg_fill_price` decimal(20,8) DEFAULT NULL,
-  `created_at_utc` datetime NOT NULL,
-  `updated_at_utc` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_orders_symbol_time` (`symbol`,`created_at_utc`),
-  KEY `idx_orders_client_id` (`client_order_id`),
-  KEY `idx_orders_decision` (`decision_id`),
-  KEY `idx_orders_role` (`role`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+```sql
+CREATE TABLE liquidation_zones_history (
+    id             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol         VARCHAR(20)     NOT NULL,        -- 'BTC'
+    as_of          DATETIME        NOT NULL,        -- snapshot time, UTC
 
-17. Таблица positions
+    current_price  DECIMAL(20, 8)  NOT NULL,
 
-CREATE TABLE `positions` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `exchange_position_id` varchar(64) DEFAULT NULL,
-  `decision_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `side` enum('long','short') NOT NULL,
-  `status` enum('open','closed') NOT NULL,
-  `entry_price` decimal(20,8) NOT NULL,
-  `avg_entry_price` decimal(20,8) DEFAULT NULL,
-  `size` decimal(20,8) NOT NULL,
-  `max_size` decimal(20,8) DEFAULT NULL,
-  `sl_price` decimal(20,8) DEFAULT NULL,
-  `tp1_price` decimal(20,8) DEFAULT NULL,
-  `tp2_price` decimal(20,8) DEFAULT NULL,
-  `opened_at_utc` datetime NOT NULL,
-  `closed_at_utc` datetime DEFAULT NULL,
-  `pnl_usdt` decimal(20,8) DEFAULT NULL,
-  `pnl_pct` decimal(10,4) DEFAULT NULL,
-  `tp1_hit` tinyint(1) NOT NULL DEFAULT 0,
-  `tp2_hit` tinyint(1) NOT NULL DEFAULT 0,
-  `liq_exit_used` tinyint(1) NOT NULL DEFAULT 0,
-  `risk_mode_at_open` enum('risk_off','cautious','neutral','aggressive') DEFAULT NULL,
-  `position_management_json` longtext DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_positions_symbol_status` (`symbol`,`status`),
-  KEY `idx_positions_open_time` (`opened_at_utc`),
-  KEY `idx_positions_decision` (`decision_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    side           ENUM('long', 'short') NOT NULL,  -- which side's liqs
+    position_rel   ENUM('above', 'below') NOT NULL, -- relative to current price
 
-18. Таблица reconciliation_events
+    center_price   DECIMAL(20, 8)  NOT NULL,
+    zone_min       DECIMAL(20, 8)  NOT NULL,
+    zone_max       DECIMAL(20, 8)  NOT NULL,
+    strength       DECIMAL(10, 8)  NOT NULL,        -- normalized 0..1
 
-CREATE TABLE `reconciliation_events` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `created_at_utc` datetime NOT NULL,
-  `module` varchar(32) NOT NULL,
-  `run_id` varchar(64) DEFAULT NULL,
-  `result` enum('ok','warning','error') NOT NULL,
-  `summary` varchar(255) DEFAULT NULL,
-  `details_json` longtext DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_recon_time` (`created_at_utc`),
-  KEY `idx_recon_module` (`module`,`created_at_utc`),
-  KEY `idx_recon_result` (`result`,`created_at_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    comment        VARCHAR(255)    NULL,
 
-19. Таблица risk_events
+    KEY idx_liq_symbol_asof (symbol, as_of),
+    KEY idx_liq_symbol_side (symbol, side, as_of)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
 
-CREATE TABLE `risk_events` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `created_at_utc` datetime NOT NULL,
-  `symbol` varchar(20) DEFAULT NULL,
-  `event_type` varchar(64) NOT NULL,
-  `old_value` varchar(64) DEFAULT NULL,
-  `new_value` varchar(64) DEFAULT NULL,
-  `details` text DEFAULT NULL,
-  `details_json` longtext DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_risk_events_time` (`created_at_utc`),
-  KEY `idx_risk_events_type` (`event_type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+Each row represents one zone (either above or below).  
+This schema mirrors `btc_liquidation_map.json` while preserving history.
 
-20. Таблица snapshots
+---
 
-CREATE TABLE `snapshots` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
-  `price` decimal(20,8) NOT NULL,
-  `timeframe` varchar(16) NOT NULL,
-  `structure_tag` varchar(32) DEFAULT NULL,
-  `momentum_tag` varchar(32) DEFAULT NULL,
-  `atr_5m` decimal(20,8) DEFAULT NULL,
-  `session` varchar(16) DEFAULT NULL,
-  `payload_json` longtext NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_snapshots_symbol_time` (`symbol`,`captured_at_utc`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+### 4.3 `news_sentiment_history` – Manual Sentiment
 
-21. Таблица trades
+```sql
+CREATE TABLE news_sentiment_history (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    as_of       DATETIME        NOT NULL,
+    score       INT             NOT NULL,         -- typical range -2..+2
+    label       VARCHAR(20)     NOT NULL,         -- 'bearish' / 'neutral' / 'bullish'
+    comment     VARCHAR(512)    NULL,
 
-CREATE TABLE `trades` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `decision_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `symbol` varchar(20) NOT NULL,
-  `side` enum('long','short') NOT NULL,
-  `entry_price` decimal(20,8) NOT NULL,
-  `avg_entry_price` decimal(20,8) DEFAULT NULL,
-  `exit_price` decimal(20,8) NOT NULL,
-  `avg_exit_price` decimal(20,8) DEFAULT NULL,
-  `quantity` decimal(20,8) NOT NULL,
-  `pnl_usdt` decimal(20,8) NOT NULL,
-  `pnl_pct` decimal(10,4) NOT NULL,
-  `max_adverse_excursion` decimal(10,4) DEFAULT NULL,
-  `max_favorable_excursion` decimal(10,4) DEFAULT NULL,
-  `opened_at_utc` datetime NOT NULL,
-  `closed_at_utc` datetime NOT NULL,
-  `exit_reason` enum('tp1','tp2','sl','liq_exit','risk_off','manual','other') NOT NULL,
-  `tp1_hit` tinyint(1) NOT NULL DEFAULT 0,
-  `tp2_hit` tinyint(1) NOT NULL DEFAULT 0,
-  `position_management_json` longtext DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_trades_symbol_time` (`symbol`,`opened_at_utc`),
-  KEY `idx_trades_closed_time` (`symbol`,`closed_at_utc`),
-  KEY `idx_trades_decision` (`decision_id`),
-  KEY `idx_trades_exit_reason` (`exit_reason`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-::contentReference[oaicite:0]{index=0}
+    KEY idx_sentiment_asof (as_of)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+Latest row is used for current `news_sentiment.json`.
+
+---
+
+## 5. Analytics Snapshots & Flow
+
+### 5.1 `snapshots` – btc_snapshot History
+
+Stores all structural market snapshots.
+
+```sql
+CREATE TABLE snapshots (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol          VARCHAR(20)     NOT NULL,      -- 'BTCUSDT'
+    timestamp       DATETIME        NOT NULL,      -- snapshot timestamp (UTC)
+
+    price           DECIMAL(20, 8)  NOT NULL,
+
+    -- optional key OHLC for quick access (e.g. last 5m candle)
+    o_5m            DECIMAL(20, 8)  NULL,
+    h_5m            DECIMAL(20, 8)  NULL,
+    l_5m            DECIMAL(20, 8)  NULL,
+    c_5m            DECIMAL(20, 8)  NULL,
+
+    -- JSON blobs for more detailed structure
+    candles_json        JSON        NULL,
+    market_structure_json JSON      NULL,
+    momentum_json       JSON        NULL,
+    session_json        JSON        NULL,
+
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uq_snapshots_symbol_ts (symbol, timestamp),
+    KEY idx_snapshots_ts (timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+The JSON columns mirror `btc_snapshot.json` fields for full fidelity.
+
+---
+
+### 5.2 `flows` – btc_flow History
+
+Stores aggregated flow context matching `btc_flow.json`.
+
+```sql
+CREATE TABLE flows (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol          VARCHAR(20)     NOT NULL,     -- 'BTCUSDT'
+    timestamp       DATETIME        NOT NULL,
+
+    derivatives_json   JSON         NULL,
+    etp_summary_json   JSON         NULL,
+    liquidation_json   JSON         NULL,
+    crowd_json         JSON         NULL,
+    trap_index_json    JSON         NULL,
+    news_sentiment_json JSON        NULL,
+    warnings_json      JSON         NULL,
+
+    risk_global_score  DECIMAL(10, 8) NULL,
+    risk_mode          VARCHAR(32)    NULL,      -- 'risk_off'/...
+
+    created_at      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uq_flows_symbol_ts (symbol, timestamp),
+    KEY idx_flows_ts (timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## 6. Decisions & Trades
+
+### 6.1 `decisions` – Decision History
+
+Each row corresponds to one 5-minute decision produced by Decision Engine.
+
+```sql
+CREATE TABLE decisions (
+    id                 BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    symbol             VARCHAR(20)     NOT NULL,     -- 'BTCUSDT'
+    timestamp          DATETIME        NOT NULL,     -- same as snapshot/flow timestamp
+
+    action             ENUM('long', 'short', 'flat') NOT NULL,
+    reason             VARCHAR(255)    NOT NULL,
+
+    entry_min_price    DECIMAL(20, 8)  NULL,
+    entry_max_price    DECIMAL(20, 8)  NULL,
+    sl_price           DECIMAL(20, 8)  NULL,
+    tp1_price          DECIMAL(20, 8)  NULL,
+    tp2_price          DECIMAL(20, 8)  NULL,
+
+    risk_level         INT             NOT NULL DEFAULT 0,   -- 0..5
+    position_size_usdt DECIMAL(20, 8)  NOT NULL DEFAULT 0,
+    leverage           DECIMAL(10, 4)  NOT NULL DEFAULT 0,
+
+    confidence         DECIMAL(10, 8)  NOT NULL DEFAULT 0,
+
+    risk_checks_json   JSON            NULL,   -- daily_dd_ok, etc.
+
+    snapshot_id        BIGINT UNSIGNED NULL,   -- FK to snapshots.id
+    flow_id            BIGINT UNSIGNED NULL,   -- FK to flows.id
+
+    created_at         DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uq_decisions_symbol_ts (symbol, timestamp),
+    KEY idx_decisions_ts (timestamp),
+    KEY idx_decisions_action (action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+Foreign keys can be enforced at DB level or handled at application level.
+
+---
+
+### 6.2 `orders` – Orders Sent to Binance
+
+This table logs **all** orders (entry, SL, TP, partials).
+
+```sql
+CREATE TABLE orders (
+    id                 BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    binance_order_id   BIGINT         NULL,        -- Binance's orderId
+    client_order_id    VARCHAR(64)    NOT NULL,    -- newClientOrderId (idempotent key)
+
+    symbol             VARCHAR(20)    NOT NULL,    -- 'BTCUSDT'
+    side               ENUM('BUY', 'SELL') NOT NULL,
+    type               VARCHAR(32)    NOT NULL,    -- LIMIT / MARKET / STOP / TAKE_PROFIT / ...
+    time_in_force      VARCHAR(8)     NULL,        -- GTC / IOC / FOK
+
+    decision_id        BIGINT UNSIGNED NULL,       -- link to decisions.id
+    position_id        BIGINT UNSIGNED NULL,       -- optional future extension
+
+    status             VARCHAR(32)    NOT NULL,    -- NEW / PARTIALLY_FILLED / FILLED / CANCELED / ...
+    created_at_exchange DATETIME      NULL,        -- Binance's transactTime
+    updated_at_exchange DATETIME      NULL,
+
+    price              DECIMAL(20, 8) NOT NULL,
+    orig_qty           DECIMAL(20, 8) NOT NULL,
+    executed_qty       DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    cumulative_quote   DECIMAL(20, 8) NOT NULL DEFAULT 0,
+
+    is_entry           TINYINT(1)     NOT NULL DEFAULT 0,
+    is_sl              TINYINT(1)     NOT NULL DEFAULT 0,
+    is_tp              TINYINT(1)     NOT NULL DEFAULT 0,
+
+    created_at         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uq_orders_client_order (client_order_id),
+    KEY idx_orders_decision (decision_id),
+    KEY idx_orders_symbol_status (symbol, status),
+    KEY idx_orders_exchange_order (binance_order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+### 6.3 `trades` – Executed Fills
+
+Some systems prefer to track executed trades separately from orders; this is recommended here.
+
+```sql
+CREATE TABLE trades (
+    id                 BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    order_id           BIGINT UNSIGNED NOT NULL,       -- FK to orders.id
+    binance_trade_id   BIGINT          NULL,           -- tradeId from Binance
+
+    symbol             VARCHAR(20)     NOT NULL,
+    side               ENUM('BUY', 'SELL') NOT NULL,
+
+    price              DECIMAL(20, 8)  NOT NULL,
+    qty                DECIMAL(20, 8)  NOT NULL,
+    quote_qty          DECIMAL(20, 8)  NOT NULL,
+
+    commission         DECIMAL(20, 8)  NULL,
+    commission_asset   VARCHAR(16)     NULL,
+
+    realized_pnl       DECIMAL(20, 8)  NULL,          -- if provided by API or computed
+
+    exec_time          DATETIME        NOT NULL,      -- transactTime converted to DATETIME UTC
+
+    created_at         DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    KEY idx_trades_order (order_id),
+    KEY idx_trades_symbol_time (symbol, exec_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## 7. Equity Curve & Performance
+
+### 7.1 `equity_curve` – Equity Over Time
+
+Stores equity snapshots (e.g. every 5 minutes, or on trade events).
+
+```sql
+CREATE TABLE equity_curve (
+    id             BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    timestamp      DATETIME        NOT NULL,
+    symbol         VARCHAR(20)     NOT NULL DEFAULT 'BTCUSDT',
+
+    equity_usdt    DECIMAL(20, 8)  NOT NULL,
+    balance_usdt   DECIMAL(20, 8)  NULL,        -- wallet balance
+    unrealized_pnl DECIMAL(20, 8)  NULL,
+    realized_pnl   DECIMAL(20, 8)  NULL,
+
+    daily_pnl      DECIMAL(20, 8)  NULL,
+    weekly_pnl     DECIMAL(20, 8)  NULL,
+
+    created_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uq_equity_ts (timestamp),
+    KEY idx_equity_timestamp (timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+This table is used for:
+
+- DD calculation,
+- performance analytics,
+- backtest vs live comparison.
+
+---
+
+## 8. Logging & Diagnostics
+
+### 8.1 `logs` – Structured Log Entries
+
+The system writes important events to DB (in addition to file logs).
+
+```sql
+CREATE TABLE logs (
+    id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    timestamp   DATETIME        NOT NULL,
+    level       VARCHAR(16)     NOT NULL,    -- 'INFO' / 'WARNING' / 'ERROR' / 'CRITICAL'
+    source      VARCHAR(64)     NOT NULL,    -- 'analytics', 'decision', 'execution', 'dashboard', 'system'
+    message     VARCHAR(1024)   NOT NULL,
+    context     JSON            NULL,        -- additional fields (order_id, decision_id, etc.)
+
+    created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    KEY idx_logs_ts (timestamp),
+    KEY idx_logs_level (level),
+    KEY idx_logs_source (source)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+
+### 8.2 `notifications` – Alerts & Notifications
+
+Все уведомления, отправляемые Notifier'ом (и те, что не удалось отправить), хранятся здесь.
+
+```sql
+CREATE TABLE notifications (
+    id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    timestamp     DATETIME        NOT NULL,
+    level         VARCHAR(16)     NOT NULL,    -- INFO / WARNING / ERROR / CRITICAL
+    source        VARCHAR(64)     NOT NULL,    -- 'execution', 'risk', 'reconciliation', 'analytics', 'system'
+    code          VARCHAR(64)     NOT NULL,    -- 'MISSING_SL', 'DAILY_DD_BREACH', 'ETF_STALE', ...
+
+    message       VARCHAR(1024)   NOT NULL,    -- краткий читаемый текст
+    payload       JSON            NULL,        -- подробный контекст (symbol, decision_id, order_id, price, etc.)
+
+    delivery_status VARCHAR(16)   NOT NULL DEFAULT 'pending',  -- 'pending' / 'sent' / 'failed'
+    delivery_channel VARCHAR(64)  NULL,        -- e.g. 'telegram'
+    delivery_attempts INT         NOT NULL DEFAULT 0,
+    last_attempt_at DATETIME      NULL,
+
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    KEY idx_notifications_ts (timestamp),
+    KEY idx_notifications_level (level),
+    KEY idx_notifications_source (source),
+    KEY idx_notifications_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+Эта таблица используется:
+- Dashboard'ом (раздел Alerts),
+- для аудита и отладки,
+- для анализа стабильности системы.
+
+
+## 9. Optional Tables
+
+These are not strictly required but useful for clarity and extension.
+
+### 9.1 `positions` – Logical Net Positions (optional)
+
+Tracks the lifecycle of net positions for reporting and reconciliation.
+
+```sql
+CREATE TABLE positions (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    symbol          VARCHAR(20)     NOT NULL,
+    side            ENUM('long', 'short') NOT NULL,
+
+    open_time       DATETIME        NOT NULL,
+    close_time      DATETIME        NULL,
+
+    avg_entry_price DECIMAL(20, 8)  NOT NULL,
+    avg_exit_price  DECIMAL(20, 8)  NULL,
+
+    qty             DECIMAL(20, 8)  NOT NULL,
+    realized_pnl    DECIMAL(20, 8)  NULL,
+
+    decision_open_id BIGINT UNSIGNED NULL,   -- decisions.id that opened it
+    decision_close_id BIGINT UNSIGNED NULL,  -- decisions.id that closed it
+
+    status          ENUM('OPEN', 'CLOSED') NOT NULL DEFAULT 'OPEN',
+
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    KEY idx_positions_symbol_status (symbol, status),
+    KEY idx_positions_open_time (open_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+### 9.2 `reconciliation_events` – Reconciliation Logs (optional)
+
+For each reconciliation run, store summary and details.
+
+```sql
+CREATE TABLE reconciliation_events (
+    id               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+
+    started_at       DATETIME        NOT NULL,
+    finished_at      DATETIME        NULL,
+
+    orphan_positions INT             NOT NULL DEFAULT 0,
+    phantom_positions INT            NOT NULL DEFAULT 0,
+    missing_sl       INT             NOT NULL DEFAULT 0,
+    orphan_orders    INT             NOT NULL DEFAULT 0,
+
+    summary          VARCHAR(1024)   NULL,
+    details_json     JSON            NULL,
+
+    created_at       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    KEY idx_recon_started (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## 10. Relationships Summary
+
+- `snapshots` ← time-series of `btc_snapshot`.
+- `flows` ← time-series of `btc_flow`.
+- `decisions`:
+  - references `snapshots` and `flows` by timestamps and optional IDs.
+  - linked to `orders` via `decision_id`.
+- `orders`:
+  - linked to `trades` via `order_id`.
+- `trades`:
+  - aggregated into `positions` (optional) and contribute to `equity_curve`.
+- `equity_curve`:
+  - used by Risk Manager to calculate DD and mode.
+- `etp_flows`, `liquidation_zones_history`, `news_sentiment_history`:
+  - provide historical context feeding into `flows`.
+
+---
+
+## 11. Migration and Evolution Strategy
+
+The schema is designed to be:
+
+- **extendable**:
+  - new JSON fields can be added in `*_json` columns without migration.
+- **compatible** with multiple symbols:
+  - `symbol` present in all core tables.
+- **backtest-friendly**:
+  - backtesting engine can read from the same tables as live systems.
+
+When adding new metrics:
+
+- prefer adding them into a JSON column first;
+- if they become critical for queries, materialize them into dedicated columns.
+
+---
+
+## 12. Summary
+
+This schema provides a robust foundation for:
+
+- real-time analytics,
+- deterministic decision-making,
+- safe execution and reconciliation,
+- detailed performance and risk analytics,
+- consistent backtesting.
+
+It directly reflects the contracts described in:
+
+- `ARCHITECTURE.md`
+- `DATA_PIPELINE.md`
+- `DECISION_ENGINE.md`
+- `EXECUTION_ENGINE.md`
+- `RISK_MANAGER.md`
+
+and is tailored for a **production-grade MariaDB deployment** of the AI Trading Showdown Bot.

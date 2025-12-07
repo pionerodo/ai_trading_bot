@@ -1,21 +1,21 @@
 {
   "symbol": "BTCUSDT",
-  "timestamp_iso": "2025-12-06T00:40:01.668276Z",
-  "timestamp_ms": 1764981601668,
-  "price": 89367.2,
+  "timestamp_iso": "2025-12-07T23:10:02.188479Z",
+  "timestamp_ms": 1765149002188,
+  "price": 89590.0,
   "derivatives": {
     "oi": {
-      "value": 86760.207,
+      "value": 86951.63,
       "change_24h": null
     },
     "funding": {
-      "current": 4.905e-05,
+      "current": -1.251e-05,
       "avg_24h": null
     },
     "taker": {
-      "buy_volume": 273.071,
-      "sell_volume": 76.77,
-      "buy_ratio": 3.557
+      "buy_volume": 681.374,
+      "sell_volume": 303.914,
+      "buy_ratio": 2.242
     }
   },
   "etp_summary": null,
@@ -25,46 +25,40 @@
     "zones": [
       {
         "side": "short",
-        "price": 96500,
+        "price": 96800,
         "strength": 10,
-        "comment": "Массивный пик ликвидности (доминанта карты), основной магнит для цены."
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
       },
       {
         "side": "short",
         "price": 91700,
         "strength": 8,
-        "comment": "Крупный кластер сопротивления и ликвидаций шортов на пути восстановления."
-      },
-      {
-        "side": "short",
-        "price": 101300,
-        "strength": 6,
-        "comment": "Далекий уровень ликвидаций за психологической отметкой 100k."
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
       },
       {
         "side": "long",
         "price": 82600,
-        "strength": 7,
-        "comment": "Ближайшая зона риска для лонгов, плотное скопление стопов."
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
       },
       {
         "side": "long",
-        "price": 79400,
+        "price": 79500,
         "strength": 7,
-        "comment": "Значимый уровень поддержки с большим объемом ликвидаций."
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
       },
       {
         "side": "long",
         "price": 73700,
-        "strength": 5,
-        "comment": "Глубокая поддержка на случай продолжения коррекции."
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
       }
     ],
     "summary": {
       "dominant_side": "shorts",
       "upside_focus_zone": "91500-97000",
       "downside_focus_zone": "79000-83000",
-      "comment": "Цена скорректировалась до 84.7k. Структура остается бычьей с точки зрения ликвидности: сверху накоплены огромные объемы (Short Squeeze potential) на 91.7k и 96.5k. Снизу поддержка ступенчатая: 82.6k и 79.4k."
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
     }
   },
   "news_sentiment": null,
@@ -93,17 +87,17 @@
   },
   "liq_metrics": {
     "summary_prev": {
-      "total_long": 19.0,
-      "total_short": 24.0,
-      "imbalance": 5.0
+      "total_long": 17.0,
+      "total_short": 18.0,
+      "imbalance": 1.0
     },
     "summary_last": {
-      "total_long": 19.0,
-      "total_short": 24.0,
-      "imbalance": 5.0
+      "total_long": 17.0,
+      "total_short": 18.0,
+      "imbalance": 1.0
     },
-    "imbalance_prev": 5.0,
-    "imbalance_last": 5.0,
+    "imbalance_prev": 1.0,
+    "imbalance_last": 1.0,
     "imbalance_delta": 0.0,
     "closest_short_distance": 6986.0,
     "closest_long_distance": 2114.0,

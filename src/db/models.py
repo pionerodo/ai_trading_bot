@@ -1,284 +1,512 @@
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, Optional
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
-    DECIMAL,
-    Date,
     DateTime,
     Enum,
     Float,
-    Index,
+    ForeignKey,
     Integer,
+    JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
-    JSON,
-    func,
+    Index,
 )
-from sqlalchemy.orm import synonym
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .session import Base
 
 
-class Candle(Base):
-    __tablename__ = "candles"
-    __table_args__ = (
-        UniqueConstraint("symbol", "timeframe", "open_time", name="uix_candles_sto"),
+# ---------------------------------------------------------------------------
+#  BOT STATE (из дампа)
+# ---------------------------------------------------------------------------
+
+
+class BotState(Base):
+    """
+    Общий key–value стор для состояния бота.
+    Таблица: bot_state
+    """
+
+    __tablename__ = "bot_state"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    value: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    symbol = Column(String(20), nullable=False)
-    timeframe = Column(String(10), nullable=False)
-    open_time = Column(DateTime, nullable=False)
-    close_time = Column(DateTime, nullable=False)
-    open_price = Column("open_price", DECIMAL(20, 8), nullable=False)
-    high_price = Column("high_price", DECIMAL(20, 8), nullable=False)
-    low_price = Column("low_price", DECIMAL(20, 8), nullable=False)
-    close_price = Column("close_price", DECIMAL(20, 8), nullable=False)
-    volume = Column(DECIMAL(28, 12), nullable=False)
-    quote_volume = Column(DECIMAL(28, 12))
-    trades_count = Column(BigInteger)
 
-    # Backward compatible aliases used by older analytics helpers
-    open = synonym("open_price")
-    high = synonym("high_price")
-    low = synonym("low_price")
-    close = synonym("close_price")
+# ---------------------------------------------------------------------------
+#  CANDLES (исторические свечи)
+# ---------------------------------------------------------------------------
+
+
+class Candle(Base):
+    """
+    Таблица исторических свечей.
+    Совмещает дамп и финальное ТЗ:
+    - symbol, timeframe, open_time
+    - OHLCV, quote_volume, trades, taker_buy_base/quote
+    """
+
+    __tablename__ = "candles"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+
+    # время открытия свечи в ms / s (как в дампе)
+    open_time: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    open: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    high: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    low: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    close: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+
+    volume: Mapped[Decimal] = mapped_column(Numeric(30, 8), nullable=False)
+    quote_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(30, 8))
+    trades: Mapped[Optional[int]] = mapped_column(Integer)
+
+    taker_buy_base: Mapped[Optional[Decimal]] = mapped_column(Numeric(30, 8))
+    taker_buy_quote: Mapped[Optional[Decimal]] = mapped_column(Numeric(30, 8))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "timeframe",
+            "open_time",
+            name="uix_candles_symbol_tf_open_time",
+        ),
+        Index("idx_candles_symbol_tf", "symbol", "timeframe"),
+    )
+
+
+# ---------------------------------------------------------------------------
+#  SNAPSHOTS (market snapshot JSON)
+# ---------------------------------------------------------------------------
 
 
 class Snapshot(Base):
+    """
+    Снимок рынка, который хранится в JSON.
+    Таблица: snapshots
+    """
+
     __tablename__ = "snapshots"
-    __table_args__ = (
-        UniqueConstraint("symbol", "timestamp", name="uix_snapshots_symbol_ts"),
-        Index("idx_snapshots_ts", "timestamp"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    # исходный JSON-слепок рынка (btc_snapshot.json)
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    symbol = Column(String(20), nullable=False)
-    timestamp = Column(DateTime, nullable=False)
-    price = Column(DECIMAL(20, 8), nullable=False)
-    session_json = Column(JSON)
-    market_structure_json = Column(JSON)
-    momentum_json = Column(JSON)
-    volatility_json = Column(JSON)
-    enriched_candles_json = Column(JSON)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+# ---------------------------------------------------------------------------
+#  FLOWS (btc_flow / btc_flow_history JSON)
+# ---------------------------------------------------------------------------
 
 
 class Flow(Base):
+    """
+    Агрегированное состояние потока / толпы по рынку.
+    Таблица: flows
+    """
+
     __tablename__ = "flows"
-    __table_args__ = (
-        UniqueConstraint("symbol", "timestamp", name="uix_flows_symbol_ts"),
-        Index("idx_flows_ts", "timestamp"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    window_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    symbol = Column(String(20), nullable=False)
-    timestamp = Column(DateTime, nullable=False)
-    derivatives_json = Column(JSON)
-    etp_summary_json = Column(JSON)
-    liquidation_json = Column(JSON)
-    crowd_json = Column(JSON)
-    trap_index_json = Column(JSON)
-    news_sentiment_json = Column(JSON)
-    warnings_json = Column(JSON)
-    risk_global_score = Column(DECIMAL(10, 8))
-    risk_mode = Column(String(32))
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
 
-
-class Decision(Base):
-    __tablename__ = "decisions"
-    __table_args__ = (
-        UniqueConstraint("symbol", "timestamp", name="uix_decisions_symbol_ts"),
-        Index("idx_decisions_ts", "timestamp"),
-        Index("idx_decisions_action", "action"),
-    )
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    symbol = Column(String(20), nullable=False)
-    timestamp = Column(DateTime, nullable=False)
-    action = Column(Enum("long", "short", "flat"), nullable=False)
-    reason = Column(String(255), nullable=False)
-    entry_min_price = Column(DECIMAL(20, 8))
-    entry_max_price = Column(DECIMAL(20, 8))
-    sl_price = Column(DECIMAL(20, 8))
-    tp1_price = Column(DECIMAL(20, 8))
-    tp2_price = Column(DECIMAL(20, 8))
-    liq_tp_zone_id = Column(String(64))
-    risk_level = Column(Integer, nullable=False, default=0)
-    position_size_usdt = Column(DECIMAL(20, 8), nullable=False, default=0)
-    leverage = Column(DECIMAL(10, 4), nullable=False, default=0)
-    confidence = Column(DECIMAL(10, 8), nullable=False, default=0)
-    risk_checks_json = Column(JSON)
-    snapshot_id = Column(BigInteger)
-    flow_id = Column(BigInteger)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+# ---------------------------------------------------------------------------
+#  LIQUIDATION ZONES (Hyperliquid / Coinglass)
+# ---------------------------------------------------------------------------
 
 
 class LiquidationZone(Base):
+    """
+    Предрасчитанные кластеры ликвидаций, чтобы Execution Engine
+    мог быстро искать TP/SL зоны.
+    Таблица: liquidation_zones
+    """
+
     __tablename__ = "liquidation_zones"
-    __table_args__ = (
-        Index("idx_liq_zone_symbol_capture", "symbol", "captured_at_utc"),
-        Index("idx_liq_zone_cluster", "cluster_id", "captured_at_utc"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(
+        Enum("long", "short", name="liq_zone_side"), nullable=False
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    symbol = Column(String(20), nullable=False)
-    source = Column(String(64))
-    captured_at_utc = Column(DateTime, nullable=False)
-    cluster_id = Column(String(64), nullable=False)
-    side = Column(Enum("long", "short"), nullable=False)
-    price_level = Column(DECIMAL(20, 8), nullable=False)
-    strength_score = Column(DECIMAL(10, 8))
-    size_btc = Column(DECIMAL(20, 8))
-    comment = Column(String(255))
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    strength: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    comment: Mapped[Optional[str]] = mapped_column(String(255))
+
+    source: Mapped[Optional[str]] = mapped_column(String(50))  # coinglass / hyperliquid
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+
+# ---------------------------------------------------------------------------
+#  DECISIONS (ключевая таблица между Analysis и Execution)
+# ---------------------------------------------------------------------------
+
+
+class Decision(Base):
+    """
+    Решение AI / стратегии по инструменту.
+    Комбинирует старый дамп и расширенное ТЗ.
+    Таблица: decisions
+    """
+
+    __tablename__ = "decisions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    # старое поле из дампа (BIGINT timestamp) – оставляем для совместимости
+    timestamp: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    # нормализованное время создания решения
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+    # направление
+    action: Mapped[str] = mapped_column(
+        Enum("long", "short", "flat", name="decision_action"), nullable=False
+    )
+
+    reason: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # зона входа
+    entry_min_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    entry_max_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+
+    # стоп и цели
+    sl_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    tp1_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    tp2_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+
+    # связь с liq-зоной (если TP привязали к кластеру)
+    liq_tp_zone_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("liquidation_zones.id")
+    )
+    liq_tp_zone: Mapped[Optional[LiquidationZone]] = relationship("LiquidationZone")
+
+    # риск-метрики
+    risk_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    position_size_usdt: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
+    leverage: Mapped[Optional[float]] = mapped_column(Float)
+
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+
+    # подробный JSON с чек-листом риск-менеджера
+    risk_checks_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+
+    # ссылки на исходные snapshot / flow
+    snapshot_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("snapshots.id")
+    )
+    flow_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("flows.id")
+    )
+
+    snapshot: Mapped[Optional[Snapshot]] = relationship("Snapshot")
+    flow: Mapped[Optional[Flow]] = relationship("Flow")
+
+    __table_args__ = (
+        Index(
+            "idx_decisions_symbol_created",
+            "symbol",
+            "created_at",
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+#  POSITIONS (открытые позиции)
+# ---------------------------------------------------------------------------
 
 
 class Position(Base):
+    """
+    Текущее состояние позиции по инструменту.
+    Таблица: positions
+    """
+
     __tablename__ = "positions"
-    __table_args__ = (
-        Index("idx_positions_symbol_status", "symbol", "status"),
-        Index("idx_positions_opened_at", "opened_at_utc"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    side: Mapped[str] = mapped_column(
+        Enum("long", "short", name="position_side"), nullable=False
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    symbol = Column(String(20), nullable=False)
-    side = Column(Enum("long", "short"), nullable=False)
-    status = Column(Enum("open", "closed"), nullable=False, default="open")
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    size: Mapped[Decimal] = mapped_column(Numeric(30, 8), nullable=False)
 
-    entry_price = Column(DECIMAL(20, 8), nullable=False)
-    avg_entry_price = Column(DECIMAL(20, 8), nullable=False)
-    size = Column(DECIMAL(20, 8), nullable=False)
-    max_size = Column(DECIMAL(20, 8))
-    sl_price = Column(DECIMAL(20, 8))
-    tp1_price = Column(DECIMAL(20, 8))
-    tp2_price = Column(DECIMAL(20, 8))
+    leverage: Mapped[Optional[float]] = mapped_column(Float)
 
-    opened_at_utc = Column(DateTime, nullable=False)
-    closed_at_utc = Column(DateTime)
+    sl_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    tp1_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    tp2_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
 
-    pnl_usdt = Column(DECIMAL(20, 8))
-    pnl_pct = Column(DECIMAL(20, 8))
+    decision_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("decisions.id")
+    )
+    decision: Mapped[Optional[Decision]] = relationship("Decision")
 
-    tp1_hit = Column(Boolean, nullable=False, default=False)
-    tp2_hit = Column(Boolean, nullable=False, default=False)
-    liq_exit_used = Column(Boolean, nullable=False, default=False)
+    is_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    risk_mode_at_open = Column(String(32))
-    position_management_json = Column(JSON)
-    decision_id = Column(BigInteger)
+    opened_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+# ---------------------------------------------------------------------------
+#  ORDERS (ордер-менеджер)
+# ---------------------------------------------------------------------------
 
 
 class Order(Base):
+    """
+    Все ордера, которыми оперирует Execution Engine.
+    Таблица: orders
+    """
+
     __tablename__ = "orders"
-    __table_args__ = (
-        UniqueConstraint("client_order_id", name="uq_orders_client_order"),
-        Index("idx_orders_decision", "decision_id"),
-        Index("idx_orders_symbol_status", "symbol", "status"),
-        Index("idx_orders_exchange_order", "exchange_order_id"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    exchange_order_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(
+        Enum("buy", "sell", name="order_side"), nullable=False
+    )
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # limit / market / stop
+
+    price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 8), nullable=False)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    decision_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("decisions.id")
+    )
+    position_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("positions.id")
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    exchange_order_id = Column(BigInteger)
-    client_order_id = Column(String(64), nullable=False)
-    symbol = Column(String(20), nullable=False)
-    role = Column(Enum("entry", "sl", "tp1", "tp2", "liq_exit", "manual_exit"), nullable=False)
-    side = Column(Enum("buy", "sell"), nullable=False)
-    order_type = Column(String(32), nullable=False)
-    status = Column(String(32), nullable=False)
-    reason_code = Column(String(64))
-    decision_id = Column(BigInteger)
-    position_id = Column(BigInteger)
-    price = Column(DECIMAL(20, 8))
-    stop_price = Column(DECIMAL(20, 8))
-    orig_qty = Column(DECIMAL(20, 8), nullable=False)
-    executed_qty = Column(DECIMAL(20, 8), nullable=False, default=0)
-    avg_fill_price = Column(DECIMAL(20, 8))
-    created_at_utc = Column(DateTime, nullable=False, server_default=func.now())
-    updated_at_utc = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-    json_data = Column(JSON)
+    decision: Mapped[Optional[Decision]] = relationship("Decision")
+    position: Mapped[Optional[Position]] = relationship("Position")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+# ---------------------------------------------------------------------------
+#  TRADES (фактические сделки)
+# ---------------------------------------------------------------------------
 
 
 class Trade(Base):
+    """
+    Наполненные сделки по данным биржи.
+    Таблица: trades
+    """
+
     __tablename__ = "trades"
-    __table_args__ = (
-        Index("idx_trades_position", "position_id"),
-        Index("idx_trades_decision", "decision_id"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    exchange_trade_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(
+        Enum("buy", "sell", name="trade_side"), nullable=False
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    position_id = Column(BigInteger)
-    decision_id = Column(BigInteger)
-    symbol = Column(String(20), nullable=False)
-    side = Column(Enum("long", "short"), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 8), nullable=False)
 
-    entry_price = Column(DECIMAL(20, 8), nullable=False)
-    avg_entry_price = Column(DECIMAL(20, 8))
-    exit_price = Column(DECIMAL(20, 8), nullable=False)
-    avg_exit_price = Column(DECIMAL(20, 8))
-    quantity = Column(DECIMAL(20, 8), nullable=False)
+    fee: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    fee_asset: Mapped[Optional[str]] = mapped_column(String(10))
 
-    pnl_usdt = Column(DECIMAL(20, 8))
-    pnl_pct = Column(DECIMAL(20, 8))
+    order_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("orders.id")
+    )
+    position_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("positions.id")
+    )
 
-    opened_at_utc = Column(DateTime, nullable=False)
-    closed_at_utc = Column(DateTime, nullable=False)
+    order: Mapped[Optional[Order]] = relationship("Order")
+    position: Mapped[Optional[Position]] = relationship("Position")
 
-    exit_reason = Column(String(32))
-    tp1_hit = Column(Boolean, nullable=False, default=False)
-    tp2_hit = Column(Boolean, nullable=False, default=False)
-    position_management_json = Column(JSON)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+
+# ---------------------------------------------------------------------------
+#  MARKET_FLOW (из дампа; простая сводка тренда)
+# ---------------------------------------------------------------------------
+
+
+class MarketFlow(Base):
+    """
+    Сводка тренда по символу/таймфрейму (историческое наследие).
+    Таблица: market_flow (из SQL-дампа).
+    """
+
+    __tablename__ = "market_flow"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+
+    trend: Mapped[str] = mapped_column(
+        Enum("bullish", "bearish", "neutral", name="market_flow_trend"),
+        nullable=False,
+    )
+    strength: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    meta: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+
+# ---------------------------------------------------------------------------
+#  LOGS (журнал исполнения)
+# ---------------------------------------------------------------------------)
 
 
 class Log(Base):
+    """
+    Высоко-уровневый лог исполнения для dashboard и отладки.
+    Таблица: logs
+    """
+
     __tablename__ = "logs"
-    __table_args__ = (
-        Index("idx_logs_ts", "timestamp"),
-        Index("idx_logs_level", "level"),
-        Index("idx_logs_source", "source"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, nullable=False)
-    level = Column(String(16), nullable=False)
-    source = Column(String(64), nullable=False)
-    message = Column(String(1024), nullable=False)
-    context = Column(JSON)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    level: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+
+    module: Mapped[Optional[str]] = mapped_column(String(100))
+    function: Mapped[Optional[str]] = mapped_column(String(100))
+
+    message: Mapped[str] = mapped_column(String(255), nullable=False)
+    context: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+
+# ---------------------------------------------------------------------------
+#  RISK_EVENTS (отдельный журнал риск-событий)
+# ---------------------------------------------------------------------------
 
 
 class RiskEvent(Base):
+    """
+    Лог важных риск-событий (фейл smoke-теста, проблемы с биржей и т.п.)
+    Таблица: risk_events
+    """
+
     __tablename__ = "risk_events"
-    __table_args__ = (
-        Index("idx_risk_events_ts", "timestamp"),
-        Index("idx_risk_events_symbol", "symbol"),
-        Index("idx_risk_events_type", "event_type"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, nullable=False)
-    event_type = Column(String(64), nullable=False)
-    symbol = Column(String(20), nullable=False)
-    details = Column(String(1024), nullable=False)
-    details_json = Column(JSON)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    symbol: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+
+    details: Mapped[Optional[str]] = mapped_column(Text)
+    details_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+
+# ---------------------------------------------------------------------------
+#  EQUITY_CURVE (P&L история)
+# ---------------------------------------------------------------------------
 
 
 class EquityCurve(Base):
+    """
+    История equity / P&L для анализа стратегий.
+    Таблица: equity_curve
+    """
+
     __tablename__ = "equity_curve"
-    __table_args__ = (
-        Index("idx_equity_timestamp", "timestamp"),
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
     )
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, nullable=False)
-    symbol = Column(String(20), nullable=False, default="BTCUSDT")
-    equity_usdt = Column(DECIMAL(20, 8), nullable=False)
-    balance_usdt = Column(DECIMAL(20, 8))
-    unrealized_pnl = Column(DECIMAL(20, 8))
-    realized_pnl = Column(DECIMAL(20, 8))
-    daily_pnl = Column(DECIMAL(20, 8))
-    weekly_pnl = Column(DECIMAL(20, 8))
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    equity_usdt: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    balance_usdt: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+
+    realized_pnl_usdt: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, default=Decimal("0")
+    )
+    unrealized_pnl_usdt: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, default=Decimal("0")
+    )

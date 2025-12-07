@@ -1,5 +1,6 @@
 import logging
 import time
+from decimal import Decimal
 from typing import Optional
 
 from binance.client import Client
@@ -46,10 +47,14 @@ class BinanceClient:
             )
         raise last_exc or RuntimeError("Binance action failed")
 
-    def get_price(self, symbol: str):
-        resp = self._with_retries("get_price", self.client.ticker_price, symbol=symbol)
-        price = resp.get("price") if isinstance(resp, dict) else None
-        return float(price) if price is not None else None
+    def get_price(self, symbol: str) -> Decimal:
+        resp = self._with_retries(
+            "get_price",
+            self.client.get_symbol_ticker,
+            symbol=symbol,
+        )
+        # resp: {"symbol": "BTCUSDT", "price": "12345.67"}
+        return Decimal(str(resp["price"]))
 
     def get_position(self, symbol: str):
         data = self._with_retries(

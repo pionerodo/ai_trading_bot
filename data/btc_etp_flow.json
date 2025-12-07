@@ -248,6 +248,25 @@
         { "ticker": "BTC", "flow_usd": 0 }
       ],
       "total_flow_usd": -194600000
+    },
+    {
+      "date_display": "05 Dec 2025",
+      "date_iso": "2025-12-05",
+      "timestamp_ms": 1764892800000,
+      "funds": [
+        { "ticker": "IBIT", "flow_usd": 0 },
+        { "ticker": "FBTC", "flow_usd": 27300000 },
+        { "ticker": "BITB", "flow_usd": 4900000 },
+        { "ticker": "ARKB", "flow_usd": 42800000 },
+        { "ticker": "BTCO", "flow_usd": 0 },
+        { "ticker": "EZBC", "flow_usd": 0 },
+        { "ticker": "BRRR", "flow_usd": 0 },
+        { "ticker": "HODL", "flow_usd": 11400000 },
+        { "ticker": "BTCW", "flow_usd": 900000 },
+        { "ticker": "GBTC", "flow_usd": 0 },
+        { "ticker": "BTC", "flow_usd": 0 }
+      ],
+      "total_flow_usd": 87300000
     }
   ],
   "notes": ""
