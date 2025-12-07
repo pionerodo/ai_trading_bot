@@ -1,15 +1,8 @@
-#!/usr/bin/env python3
 """
-generate_btc_snapshot.py
-
-v2:
-- берём свежие свечи BTCUSDT по 1m/5m/15m/1h из БД
-- берём последний срез деривативов
-- собираем btc_snapshot_v2.json (НОВОЕ имя файла!)
-- сохраняем в ./data/btc_snapshot_v2.json
-
-Старый файл data/btc_snapshot.json может использоваться старым кодом,
-мы к нему больше не привязаны.
+Генерация btc_snapshot.json и запись в таблицу `snapshots`.
+Соответствует DATA_PIPELINE.md и DATABASE_SCHEMA.md: каждые 5 минут
+строит компактный снимок рынка BTCUSDT, сохраняет его в data/btc_snapshot.json
+и в БД.
 """
 
 import json
@@ -20,27 +13,21 @@ from datetime import datetime, timezone
 from statistics import median
 from typing import Any, Dict, List, Optional
 
-# --- Пути проекта ---
-
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.dirname(THIS_DIR)               # .../src
-PROJECT_ROOT = os.path.dirname(SRC_DIR)           # .../ai_trading_bot
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
 
-from src.data_collector.db_utils import get_db_connection  # type: ignore
+from src.data_collector.db_utils import get_db_connection
 
 # --- Настройки ---
 
-SYMBOL_DB = "BTCUSDT"    # как в БД
-SYMBOL_SNAPSHOT = "BTC"  # как пишем в JSON
+SYMBOL_DB = "BTCUSDT"
+SYMBOL_SNAPSHOT = "BTCUSDT"
 
 TIMEFRAMES = ["1m", "5m", "15m", "1h"]
 
 LOG_FILE_PATH = os.path.join(PROJECT_ROOT, "logs", "generate_btc_snapshot.log")
-# НОВЫЙ путь!
-SNAPSHOT_PATH = os.path.join(PROJECT_ROOT, "data", "btc_snapshot_v2.json")
+SNAPSHOT_PATH = os.path.join(PROJECT_ROOT, "data", "btc_snapshot.json")
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +61,7 @@ def fetch_recent_candles(
     limit: int = 120,
 ) -> List[Dict[str, Any]]:
     sql = """
-        SELECT open_time, `open`, high, low, `close`, volume
+        SELECT open_time, open_price, high_price, low_price, close_price, volume
         FROM candles
         WHERE symbol = %s AND timeframe = %s
         ORDER BY open_time DESC
@@ -86,9 +73,10 @@ def fetch_recent_candles(
 
     candles: List[Dict[str, Any]] = []
     for row in reversed(rows):
+        open_time = row[0]
         candles.append(
             {
-                "open_time": int(row[0]),
+                "open_time": int(open_time.timestamp() * 1000),
                 "open": float(row[1]),
                 "high": float(row[2]),
                 "low": float(row[3]),
@@ -101,15 +89,13 @@ def fetch_recent_candles(
 
 def fetch_last_derivatives(conn, symbol: str) -> Optional[Dict[str, Any]]:
     sql = """
-        SELECT timestamp_ms,
+        SELECT timestamp,
                open_interest,
                funding_rate,
-               taker_buy_volume,
-               taker_sell_volume,
-               taker_buy_ratio
+               extra_json
         FROM derivatives
         WHERE symbol = %s
-        ORDER BY timestamp_ms DESC
+        ORDER BY timestamp DESC
         LIMIT 1
     """
     with conn.cursor() as cur:
@@ -118,17 +104,76 @@ def fetch_last_derivatives(conn, symbol: str) -> Optional[Dict[str, Any]]:
         if not row:
             return None
 
+        extra = None
+        try:
+            extra = json.loads(row[3]) if row[3] is not None else None
+        except Exception:
+            extra = None
+
         return {
-            "timestamp_ms": int(row[0]),
+            "timestamp": row[0],
             "open_interest": float(row[1]) if row[1] is not None else None,
             "funding_rate": float(row[2]) if row[2] is not None else None,
-            "taker_buy_volume": float(row[3]) if row[3] is not None else None,
-            "taker_sell_volume": float(row[4]) if row[4] is not None else None,
-            "taker_buy_ratio": float(row[5]) if row[5] is not None else None,
+            "extra": extra or {},
         }
 
 
-# --- Заглушки структуры рынка / момента / сессии ---
+def persist_snapshot(conn, snapshot: Dict[str, Any]) -> None:
+    ts_iso = snapshot.get("timestamp_iso")
+    if not ts_iso:
+        raise ValueError("persist_snapshot: timestamp_iso missing")
+    ts_dt = datetime.fromisoformat(str(ts_iso).replace("Z", "+00:00"))
+
+    candles_block = snapshot.get("candles") or {}
+    tf5 = candles_block.get("tf_5m", {})
+
+    sql = """
+        INSERT INTO snapshots (
+            symbol,
+            timestamp,
+            price,
+            o_5m,
+            h_5m,
+            l_5m,
+            c_5m,
+            candles_json,
+            market_structure_json,
+            momentum_json,
+            session_json
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE
+            price=VALUES(price),
+            o_5m=VALUES(o_5m),
+            h_5m=VALUES(h_5m),
+            l_5m=VALUES(l_5m),
+            c_5m=VALUES(c_5m),
+            candles_json=VALUES(candles_json),
+            market_structure_json=VALUES(market_structure_json),
+            momentum_json=VALUES(momentum_json),
+            session_json=VALUES(session_json)
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(
+            sql,
+            (
+                snapshot.get("symbol", SYMBOL_DB),
+                ts_dt,
+                snapshot.get("price"),
+                tf5.get("o"),
+                tf5.get("h"),
+                tf5.get("l"),
+                tf5.get("c"),
+                json.dumps(candles_block, ensure_ascii=False),
+                json.dumps(snapshot.get("market_structure", {}), ensure_ascii=False),
+                json.dumps(snapshot.get("momentum", {}), ensure_ascii=False),
+                json.dumps(snapshot.get("session", {}), ensure_ascii=False),
+            ),
+        )
+    conn.commit()
+
+
+# --- Вспомогательные вычисления ---
 
 def _clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
     return max(min_value, min(max_value, value))
@@ -245,7 +290,7 @@ def build_btc_snapshot(conn) -> Dict[str, Any]:
             "v": last_candle["volume"],
         }
 
-        structure_block[key] = {"value": compute_market_structure(series)}
+        structure_block[key] = compute_market_structure(series)
         momentum_block[key] = compute_momentum(series)
 
         atr_value = compute_atr(series)
@@ -276,12 +321,9 @@ def build_btc_snapshot(conn) -> Dict[str, Any]:
             "current": deriv["funding_rate"] if deriv else None,
             "avg_24h": None,
         },
-        "taker": {
-            "buy_volume": deriv["taker_buy_volume"] if deriv else None,
-            "sell_volume": deriv["taker_sell_volume"] if deriv else None,
-            "buy_ratio": deriv["taker_buy_ratio"] if deriv else None,
-        },
     }
+    if deriv and deriv.get("extra"):
+        derivatives_block["extra"] = deriv["extra"]
 
     def _vol_regime() -> str:
         atr_pct_candidates = [v.get("atr_pct") for v in atr_block.values() if v.get("atr_pct")]
@@ -320,6 +362,8 @@ def save_snapshot_to_file(snapshot: Dict[str, Any]) -> None:
     os.replace(tmp_path, SNAPSHOT_PATH)
 
 
+# --- main ---
+
 def main() -> None:
     setup_logging()
     logger.info("generate_btc_snapshot: started")
@@ -333,8 +377,9 @@ def main() -> None:
     try:
         snapshot = build_btc_snapshot(conn)
         save_snapshot_to_file(snapshot)
+        persist_snapshot(conn, snapshot)
         logger.info(
-            "generate_btc_snapshot: saved snapshot to %s (ts=%s)",
+            "generate_btc_snapshot: saved snapshot to %s and DB (ts=%s)",
             SNAPSHOT_PATH,
             snapshot.get("timestamp_iso"),
         )
