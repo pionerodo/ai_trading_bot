@@ -1,14 +1,13 @@
 """
 Decision Engine v2: deterministic trading decision builder.
 
-- Consumes latest btc_snapshot_v2.json and btc_flow.json.
+- Consumes latest btc_snapshot.json and btc_flow.json.
 - Evaluates long/short candidates using structure, momentum and flow context.
 - Applies risk checks, ATR-based sizing and produces full decision.json payload.
 - Persists the result to JSON and the `decisions` DB table when run as a script.
 """
 from __future__ import annotations
 
-import json
 import json
 import logging
 import os
@@ -17,12 +16,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from src.core.config_loader import load_config
-from src.data_collector.db_utils import get_db_connection  # type: ignore
+# --- Ensure project root on sys.path for cron execution ---
+CURRENT_FILE = os.path.abspath(__file__)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_FILE)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.dirname(THIS_DIR)
-PROJECT_ROOT = os.path.dirname(SRC_DIR)
+from src.core.config_loader import load_config
+from src.data_collector.db_utils import get_db_connection
 
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_snapshot.json")
@@ -80,434 +81,364 @@ def setup_logging() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Data models
+# Risk policy settings
+# ---------------------------------------------------------------------------
+
+
+dataclass_json = Tuple[float, float, float, float]
+
+
+@dataclass
+class RiskPolicy:
+    max_daily_dd: float = 0.05
+    max_weekly_dd: float = 0.12
+    max_trades_per_day: int = 10
+    min_confidence: float = 0.55
+    etp_warning_block: bool = True
+    liquidation_warning_block: bool = True
+    news_warning_block: bool = False
+
+
+RISK_POLICY = RiskPolicy()
+
+
+# ---------------------------------------------------------------------------
+# Decision logic helpers
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class AccountState:
-    equity: float
-    trades_today: int = 0
-    daily_dd_pct: float = 0.0
-    weekly_dd_pct: float = 0.0
+class Decision:
+    action: str
+    confidence: float
+    rationale: str
+    price_ref: float
+    stop_loss: float
+    take_profit: float
+    position_size: float
+    snapshot_id: Optional[int]
+    flow_id: Optional[int]
+    risk_flags: Dict[str, Any]
 
-    @classmethod
-    def from_defaults(cls, config: Dict[str, Any]) -> "AccountState":
-        trading = config.get("trading", {})
-        return cls(equity=float(trading.get("initial_equity_usd", 10_000.0)))
-
-
-@dataclass
-class CandidateScore:
-    direction: str
-    structure_score: float
-    momentum_score: float
-    flow_score: float
-    total: float
-    reason: str
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "action": self.action,
+            "confidence": self.confidence,
+            "rationale": self.rationale,
+            "price_ref": self.price_ref,
+            "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
+            "position_size": self.position_size,
+            "snapshot_id": self.snapshot_id,
+            "flow_id": self.flow_id,
+            "risk_flags": self.risk_flags,
+        }
 
 
 # ---------------------------------------------------------------------------
-# Candidate scoring
+# Core computation
 # ---------------------------------------------------------------------------
 
 
-def _structure_bias(snapshot: Dict[str, Any], direction: str) -> Tuple[float, str]:
-    ms = snapshot.get("market_structure") or {}
-    weights = {"tf_5m": 0.4, "tf_15m": 0.35, "tf_1h": 0.25}
-    score = 0.0
-    reasons = []
-    for tf, weight in weights.items():
-        value = (ms.get(tf) or {}).get("value")
-        if direction == "long" and value == "HH-HL":
-            score += weight
-            reasons.append(f"{tf}_hh_hl")
-        if direction == "short" and value == "LL-LH":
-            score += weight
-            reasons.append(f"{tf}_ll_lh")
-        if value == "range":
-            score += weight * 0.3
-    return _clamp(score, 0.0, 1.0), ";".join(reasons) or "structure_neutral"
+def _extract_price(snapshot: Dict[str, Any]) -> Optional[float]:
+    try:
+        return float(snapshot.get("price"))
+    except Exception:
+        return None
 
 
-def _momentum_bias(snapshot: Dict[str, Any], direction: str) -> Tuple[float, str]:
-    mom = snapshot.get("momentum") or {}
-    score = 0.0
-    reasons = []
-    for tf, weight in {"tf_5m": 0.4, "tf_15m": 0.35, "tf_1h": 0.25}.items():
-        state = (mom.get(tf) or {}).get("state")
-        state_score = float((mom.get(tf) or {}).get("score", 0.5) or 0.5)
-        if direction == "long" and state == "impulse_up":
-            score += weight * max(0.6, state_score)
-            reasons.append(f"{tf}_impulse_up")
-        elif direction == "short" and state == "impulse_down":
-            score += weight * max(0.6, state_score)
-            reasons.append(f"{tf}_impulse_down")
-        else:
-            score += weight * 0.3
-    return _clamp(score), ";".join(reasons) or "momentum_neutral"
+def _extract_atr(snapshot: Dict[str, Any]) -> Optional[float]:
+    structure = snapshot.get("structure", {}) if isinstance(snapshot, dict) else {}
+    try:
+        return float(structure.get("atr"))
+    except Exception:
+        return None
 
 
-def _flow_bias(flow: Dict[str, Any], direction: str) -> Tuple[float, str]:
-    reasons = []
-    score = 0.4
+def _extract_momentum(snapshot: Dict[str, Any]) -> Optional[float]:
+    try:
+        return float(snapshot.get("momentum", {}).get("score"))
+    except Exception:
+        return None
 
-    crowd = flow.get("crowd") or {}
-    if crowd.get("bias") == direction:
-        score += 0.25 * float(crowd.get("score", 0.5) or 0.5)
-        reasons.append("crowd_alignment")
-    elif crowd.get("bias") == "neutral":
-        score += 0.05
+
+def _extract_flow_score(flow: Dict[str, Any]) -> Optional[float]:
+    try:
+        return float(flow.get("flow_score"))
+    except Exception:
+        return None
+
+
+def _risk_blockers(flow: Dict[str, Any]) -> Dict[str, bool]:
+    flags = {
+        "etf_warning": False,
+        "liquidation_warning": False,
+        "news_warning": False,
+    }
+    warnings = flow.get("warnings", {}) if isinstance(flow, dict) else {}
+    if warnings.get("etf_warning"):
+        flags["etf_warning"] = True
+    if warnings.get("liquidation_warning"):
+        flags["liquidation_warning"] = True
+    news = flow.get("news", {}) if isinstance(flow, dict) else {}
+    try:
+        if news.get("sentiment") == "bearish" and abs(float(news.get("score", 0.0))) > 0.5:
+            flags["news_warning"] = True
+    except Exception:
+        pass
+    return flags
+
+
+def _evaluate_direction(momentum: Optional[float], flow_score: Optional[float]) -> Tuple[str, float, str]:
+    if momentum is None or flow_score is None:
+        return "hold", 0.0, "insufficient data"
+
+    avg_score = (momentum + flow_score) / 2.0
+    if avg_score > 0.6:
+        return "long", avg_score, "momentum+flow bullish"
+    if avg_score < -0.6:
+        return "short", abs(avg_score), "momentum+flow bearish"
+    return "hold", abs(avg_score), "neutral band"
+
+
+def _apply_risk_checks(direction: str, confidence: float, price: float, atr: float, flow_flags: Dict[str, bool]) -> Tuple[str, float, Dict[str, bool]]:
+    flags = flow_flags.copy()
+
+    if confidence < RISK_POLICY.min_confidence:
+        flags["low_confidence"] = True
+        return "hold", confidence, flags
+
+    if direction == "hold":
+        flags["neutral"] = True
+        return direction, confidence, flags
+
+    if flow_flags.get("etf_warning") and RISK_POLICY.etp_warning_block:
+        flags["blocked_etf"] = True
+        return "hold", confidence, flags
+
+    if flow_flags.get("liquidation_warning") and RISK_POLICY.liquidation_warning_block:
+        flags["blocked_liquidation"] = True
+        return "hold", confidence, flags
+
+    if flow_flags.get("news_warning") and RISK_POLICY.news_warning_block:
+        flags["blocked_news"] = True
+        return "hold", confidence, flags
+
+    if atr and atr > 0 and price:
+        sl = price - 1.5 * atr if direction == "long" else price + 1.5 * atr
+        tp = price + 3 * atr if direction == "long" else price - 3 * atr
     else:
-        score -= 0.1
+        sl = price * 0.99 if direction == "long" else price * 1.01
+        tp = price * 1.02 if direction == "long" else price * 0.98
 
-    etp = flow.get("etp_summary") or {}
-    signal = etp.get("signal")
-    if direction == "long" and signal in {"bullish", "heavy_inflow"}:
-        score += 0.1
-        reasons.append("etf_support")
-    elif direction == "short" and signal in {"bearish", "heavy_outflow"}:
-        score += 0.1
-        reasons.append("etf_headwind_to_bulls")
-
-    liq = flow.get("liq_summary") or {}
-    dominant = (liq.get("dominant_side") or "").lower()
-    if direction == "long" and dominant == "bears":
-        score += 0.05
-        reasons.append("liq_above_price")
-    elif direction == "short" and dominant == "bulls":
-        score += 0.05
-        reasons.append("liq_below_price")
-
-    trap_index = float(flow.get("crowd_trap_index", 0.0) or 0.0)
-    if direction == "long" and trap_index < 0:
-        score -= abs(trap_index)
-        reasons.append("trap_risk_long")
-    if direction == "short" and trap_index > 0:
-        score -= abs(trap_index)
-        reasons.append("trap_risk_short")
-
-    news = flow.get("news_sentiment") or {}
-    news_score = float(news.get("score", 0.0) or 0.0)
-    if direction == "long" and news_score > 0.2:
-        score += 0.05
-        reasons.append("news_bullish")
-    elif direction == "short" and news_score < -0.2:
-        score += 0.05
-        reasons.append("news_bearish")
-
-    return _clamp(score), ";".join(reasons) or "flow_neutral"
-
-
-def _score_candidate(snapshot: Dict[str, Any], flow: Dict[str, Any], direction: str) -> CandidateScore:
-    structure_score, s_reason = _structure_bias(snapshot, direction)
-    momentum_score, m_reason = _momentum_bias(snapshot, direction)
-    flow_score, f_reason = _flow_bias(flow, direction)
-
-    total = _clamp(0.4 * structure_score + 0.35 * momentum_score + 0.25 * flow_score)
-    reason = ",".join([s_reason, m_reason, f_reason])
-    return CandidateScore(direction, structure_score, momentum_score, flow_score, total, reason)
-
-
-# ---------------------------------------------------------------------------
-# Risk checks & sizing
-# ---------------------------------------------------------------------------
-
-
-def _build_risk_checks(flow: Dict[str, Any], account: AccountState) -> Dict[str, bool]:
-    cfg = load_config()
-    risk_cfg = cfg.get("risk", {})
-    risk_mode = (flow.get("risk") or {}).get("mode", "neutral")
-    warnings = flow.get("warnings") or []
-
-    max_daily_dd = float(risk_cfg.get("max_daily_dd_pct", -2.0))
-    max_weekly_dd = float(risk_cfg.get("max_weekly_dd_pct", -5.0))
-    max_trades_per_day = int(risk_cfg.get("max_trades_per_day", 3))
-
-    checks = {
-        "daily_dd_ok": account.daily_dd_pct >= max_daily_dd,
-        "weekly_dd_ok": account.weekly_dd_pct >= max_weekly_dd,
-        "max_trades_per_day_ok": account.trades_today < max_trades_per_day,
-        "session_ok": True,
-        "no_major_news": "major_news" not in warnings,
+    position_size = _clamp(confidence, 0.1, 1.0)
+    return direction, confidence, {
+        **flags,
+        "stop_loss": sl,
+        "take_profit": tp,
+        "position_size": position_size,
     }
 
-    session_block = flow.get("session") or {}
-    if isinstance(session_block, dict) and session_block.get("restricted"):
-        checks["session_ok"] = False
-
-    if risk_mode == "risk_off":
-        checks = {k: False if k != "session_ok" else checks[k] for k in checks}
-    if "volatility_high" in warnings:
-        checks["session_ok"] = False
-
-    return checks
-
-
-def _atr_stop(snapshot: Dict[str, Any]) -> Optional[float]:
-    atr_block = ((snapshot.get("volatility") or {}).get("atr") or {})
-    for tf in ("tf_15m", "tf_5m", "tf_1h"):
-        if tf in atr_block and atr_block[tf].get("atr"):
-            return float(atr_block[tf]["atr"])
-    return None
-
-
-def _sizing(
-    price: float,
-    atr: Optional[float],
-    account: AccountState,
-    cfg: Dict[str, Any],
-    risk_mode: str,
-) -> Tuple[float, float, float]:
-    risk_cfg = cfg.get("risk", {})
-    trading_cfg = cfg.get("trading", {})
-
-    risk_pct = float(risk_cfg.get("risk_pct_per_trade", trading_cfg.get("max_risk_pct_per_trade", 0.01)))
-    stop_distance = atr if atr else price * 0.005
-    if stop_distance <= 0:
-        stop_distance = price * 0.005
-
-    position_risk_usd = account.equity * risk_pct
-    notional = position_risk_usd / (stop_distance / price)
-    position_size_usdt = float(min(notional, float(trading_cfg.get("position_size_cap_usd", notional))))
-
-    leverage_caps = cfg.get("binance", {}).get("leverage_caps", {})
-    leverage_default = float(cfg.get("binance", {}).get("max_leverage", 3))
-    leverage_cap = float(leverage_caps.get(risk_mode, leverage_default))
-    leverage = min(max(1.0, position_size_usdt / account.equity), leverage_cap)
-
-    return position_size_usdt, leverage, stop_distance
-
 
 # ---------------------------------------------------------------------------
-# Decision builder
+# DB helpers
 # ---------------------------------------------------------------------------
 
 
-def compute_decision(
-    snapshot: Dict[str, Any],
-    flow: Dict[str, Any],
-    account_state: Optional[AccountState] = None,
-) -> Dict[str, Any]:
-    config = load_config()
-    account = account_state or AccountState.from_defaults(config)
-    price = float(snapshot.get("price") or 0.0)
-    timestamp_iso = snapshot.get("timestamp_iso") or datetime.now(timezone.utc).isoformat()
-    timestamp_dt = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
+def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp: datetime) -> Tuple[Optional[int], Optional[int]]:
+    snapshot_id = None
+    flow_id = None
 
-    long_cand = _score_candidate(snapshot, flow, "long")
-    short_cand = _score_candidate(snapshot, flow, "short")
+    sql_snapshot = "SELECT id FROM snapshots WHERE symbol=%s AND timestamp=%s LIMIT 1"
+    sql_flow = "SELECT id FROM flows WHERE symbol=%s AND timestamp=%s LIMIT 1"
 
-    best = max((long_cand, short_cand), key=lambda c: c.total)
-    second = min((long_cand, short_cand), key=lambda c: c.total)
+    with conn.cursor() as cur:
+        cur.execute(sql_snapshot, ("BTCUSDT", snapshot_timestamp))
+        row = cur.fetchone()
+        if row:
+            snapshot_id = row[0]
 
-    risk_checks = _build_risk_checks(flow, account)
-    all_checks_ok = all(risk_checks.values())
+        cur.execute(sql_flow, ("BTCUSDT", flow_timestamp))
+        row = cur.fetchone()
+        if row:
+            flow_id = row[0]
 
-    # Resolve conflicts
-    action = "flat"
-    reason = "conflict_or_low_score"
-    confidence = 0.25
-    if best.total - second.total > 0.08 and best.total > 0.45:
-        action = best.direction
-        reason = best.reason
-        confidence = _clamp(best.total + float(flow.get("alignment_score", 0.5) or 0.5) * 0.2)
-    elif best.total < 0.35:
-        action = "flat"
-        reason = "signals_weak"
-        confidence = best.total
-
-    if not all_checks_ok:
-        action = "flat"
-        confidence = min(confidence, 0.49)
-        reason = "risk_checks_blocked"
-
-    atr = _atr_stop(snapshot)
-    risk_mode = (flow.get("risk") or {}).get("mode", "neutral")
-    position_size_usdt, leverage, stop_distance = _sizing(price, atr, account, config, risk_mode)
-    zone_half = stop_distance * 0.4
-
-    if action == "long":
-        entry_zone = [price - zone_half, price + zone_half]
-        sl = price - stop_distance
-        tp1 = price + stop_distance * 1.5
-        tp2 = price + stop_distance * 2.5
-    elif action == "short":
-        entry_zone = [price - zone_half, price + zone_half]
-        sl = price + stop_distance
-        tp1 = price - stop_distance * 1.5
-        tp2 = price - stop_distance * 2.5
-    else:
-        entry_zone = []
-        sl = None
-        tp1 = None
-        tp2 = None
-        position_size_usdt = 0.0
-        leverage = 0.0
-
-    decision = {
-        "symbol": snapshot.get("symbol", "BTCUSDT"),
-        "timestamp_iso": timestamp_iso,
-        "timestamp": timestamp_dt.isoformat(),
-        "price": price,
-        "action": action,
-        "reason": reason,
-        "entry_zone": entry_zone,
-        "sl": sl,
-        "tp1": tp1,
-        "tp2": tp2,
-        "risk_level": 3 if action != "flat" else 0,
-        "position_size_usdt": round(position_size_usdt, 2),
-        "leverage": round(leverage, 2),
-        "confidence": round(confidence, 3),
-        "risk_checks": risk_checks,
-        "risk": flow.get("risk", {}),
-        "context": {
-            "structure": {
-                "long": long_cand.structure_score,
-                "short": short_cand.structure_score,
-            },
-            "momentum": {
-                "long": long_cand.momentum_score,
-                "short": short_cand.momentum_score,
-            },
-            "flow": {
-                "long": long_cand.flow_score,
-                "short": short_cand.flow_score,
-            },
-            "warnings": flow.get("warnings", []),
-        },
-    }
-
-    return decision
+    return snapshot_id, flow_id
 
 
-# ---------------------------------------------------------------------------
-# DB persistence
-# ---------------------------------------------------------------------------
-
-
-def upsert_decision(conn, decision: Dict[str, Any]) -> None:
-    symbol = decision.get("symbol", "BTCUSDT")
-    action = decision.get("action", "flat")
-    confidence = float(decision.get("confidence") or 0.0)
-    reason = decision.get("reason", "")[:255]
-    timestamp_iso = decision.get("timestamp_iso") or decision.get("timestamp")
-    timestamp_dt = datetime.fromisoformat(str(timestamp_iso).replace("Z", "+00:00"))
-    entry_zone = decision.get("entry_zone") or []
+def _insert_decision(conn, decision: Decision, snapshot_ts: datetime, flow_ts: datetime, timestamp_ms: int) -> None:
+    sql = """
+        INSERT INTO decisions (
+            symbol,
+            timestamp,
+            action,
+            confidence,
+            rationale,
+            price_ref,
+            stop_loss,
+            take_profit,
+            position_size,
+            snapshot_id,
+            flow_id,
+            timestamp_ms,
+            risk_flags
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE
+            action=VALUES(action),
+            confidence=VALUES(confidence),
+            rationale=VALUES(rationale),
+            price_ref=VALUES(price_ref),
+            stop_loss=VALUES(stop_loss),
+            take_profit=VALUES(take_profit),
+            position_size=VALUES(position_size),
+            snapshot_id=VALUES(snapshot_id),
+            flow_id=VALUES(flow_id),
+            timestamp_ms=VALUES(timestamp_ms),
+            risk_flags=VALUES(risk_flags)
+    """
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM decisions WHERE symbol = %s AND timestamp = %s LIMIT 1",
-            (symbol, timestamp_dt),
+            sql,
+            (
+                "BTCUSDT",
+                snapshot_ts,
+                decision.action,
+                decision.confidence,
+                decision.rationale,
+                decision.price_ref,
+                decision.stop_loss,
+                decision.take_profit,
+                decision.position_size,
+                decision.snapshot_id,
+                decision.flow_id,
+                timestamp_ms,
+                json.dumps(decision.risk_flags, ensure_ascii=False),
+            ),
         )
-        row = cur.fetchone()
-        params = (
-            symbol,
-            timestamp_dt,
-            action,
-            reason,
-            entry_zone[0] if entry_zone else None,
-            entry_zone[1] if len(entry_zone) > 1 else None,
-            decision.get("sl"),
-            decision.get("tp1"),
-            decision.get("tp2"),
-            int(decision.get("risk_level", 0) or 0),
-            float(decision.get("position_size_usdt", 0.0) or 0.0),
-            float(decision.get("leverage", 0.0) or 0.0),
-            confidence,
-            json.dumps(decision.get("risk_checks", {}), ensure_ascii=False),
-        )
-
-        if row:
-            decision_id = int(row[0])
-            sql = """
-                UPDATE decisions
-                SET symbol=%s,
-                    timestamp=%s,
-                    action=%s,
-                    reason=%s,
-                    entry_min_price=%s,
-                    entry_max_price=%s,
-                    sl_price=%s,
-                    tp1_price=%s,
-                    tp2_price=%s,
-                    risk_level=%s,
-                    position_size_usdt=%s,
-                    leverage=%s,
-                    confidence=%s,
-                    risk_checks_json=%s
-                WHERE id=%s
-            """
-            cur.execute(sql, (*params, decision_id))
-        else:
-            sql = """
-                INSERT INTO decisions (
-                    symbol,
-                    timestamp,
-                    action,
-                    reason,
-                    entry_min_price,
-                    entry_max_price,
-                    sl_price,
-                    tp1_price,
-                    tp2_price,
-                    risk_level,
-                    position_size_usdt,
-                    leverage,
-                    confidence,
-                    risk_checks_json
-                ) VALUES (
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-                )
-            """
-            cur.execute(sql, params)
-
     conn.commit()
 
 
 # ---------------------------------------------------------------------------
-# Entrypoint
+# Main
 # ---------------------------------------------------------------------------
+
+
+def _build_decision(snapshot: Dict[str, Any], flow: Dict[str, Any]) -> Decision:
+    price = _extract_price(snapshot)
+    atr = _extract_atr(snapshot) or 0.0
+    momentum_score = _extract_momentum(snapshot)
+    flow_score = _extract_flow_score(flow)
+
+    direction, confidence, rationale = _evaluate_direction(momentum_score, flow_score)
+    flow_flags = _risk_blockers(flow)
+
+    if price is None:
+        return Decision(
+            action="hold",
+            confidence=0.0,
+            rationale="missing price",
+            price_ref=0.0,
+            stop_loss=0.0,
+            take_profit=0.0,
+            position_size=0.0,
+            snapshot_id=None,
+            flow_id=None,
+            risk_flags={"invalid_input": True},
+        )
+
+    direction, confidence, risk_flags = _apply_risk_checks(direction, confidence, price, atr, flow_flags)
+
+    stop_loss = risk_flags.pop("stop_loss", price)
+    take_profit = risk_flags.pop("take_profit", price)
+    position_size = risk_flags.pop("position_size", 0.0)
+
+    return Decision(
+        action=direction,
+        confidence=confidence,
+        rationale=rationale,
+        price_ref=price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        position_size=position_size,
+        snapshot_id=None,
+        flow_id=None,
+        risk_flags=risk_flags,
+    )
 
 
 def main() -> None:
     setup_logging()
     logger.info("decision_engine: started")
 
+    cfg = load_config()
+    decision_enabled = cfg.get("decision_engine", {}).get("enabled", True)
+    if not decision_enabled:
+        logger.info("decision_engine: disabled via config")
+        return
+
     snapshot = _safe_load_json(SNAPSHOT_PATH)
     flow = _safe_load_json(FLOW_PATH)
+
     if not snapshot or not flow:
-        logger.error("decision_engine: missing snapshot or flow")
-        sys.exit(1)
+        logger.error("decision_engine: missing snapshot or flow; aborting run")
+        return
+
+    snapshot_ts = snapshot.get("timestamp")
+    flow_ts = flow.get("timestamp")
+    if not snapshot_ts or not flow_ts:
+        logger.error("decision_engine: missing timestamps; aborting run")
+        return
+
+    try:
+        snapshot_dt = datetime.fromisoformat(snapshot_ts)
+        flow_dt = datetime.fromisoformat(flow_ts)
+    except Exception as e:  # pragma: no cover - defensive logging
+        logger.error("decision_engine: invalid timestamp format: %s", e, exc_info=True)
+        return
+
+    decision = _build_decision(snapshot, flow)
+
+    decision.snapshot_id = snapshot.get("db_id")
+    decision.flow_id = flow.get("db_id")
+
+    payload = decision.to_dict()
+    payload.update({
+        "symbol": "BTCUSDT",
+        "timestamp": snapshot_ts,
+        "flow_timestamp": flow_ts,
+        "timestamp_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
+    })
+
+    _save_json(DECISION_PATH, payload)
 
     try:
         conn = get_db_connection()
     except Exception as e:
-        logger.error("decision_engine: cannot get DB connection: %s", e, exc_info=True)
-        sys.exit(1)
+        logger.error("decision_engine: DB connection error: %s", e, exc_info=True)
+        return
 
     try:
-        decision = compute_decision(snapshot, flow)
-        _save_json(DECISION_PATH, decision)
-        upsert_decision(conn, decision)
+        snap_id, flow_id = _lookup_snapshot_flow_ids(conn, snapshot_dt, flow_dt)
+        decision.snapshot_id = snap_id
+        decision.flow_id = flow_id
+
+        _insert_decision(conn, decision, snapshot_dt, flow_dt, payload["timestamp_ms"])
         logger.info(
-            "decision_engine: decision %s (conf=%.2f, size=%.0f) at %s",
-            decision.get("action"),
-            float(decision.get("confidence", 0.0)),
-            float(decision.get("position_size_usdt", 0.0)),
-            decision.get("timestamp_iso"),
+            "decision_engine: saved decision action=%s confidence=%.3f snapshot_id=%s flow_id=%s",
+            decision.action,
+            decision.confidence,
+            decision.snapshot_id,
+            decision.flow_id,
         )
-    except Exception as e:  # pragma: no cover - runtime safeguard
-        logger.error("decision_engine: failed: %s", e, exc_info=True)
-        sys.exit(1)
+    except Exception as e:  # pragma: no cover - defensive logging
+        logger.error("decision_engine: failed to insert decision: %s", e, exc_info=True)
     finally:
         try:
             conn.close()
         except Exception:
             pass
-
-    logger.info("decision_engine: finished")
 
 
 if __name__ == "__main__":

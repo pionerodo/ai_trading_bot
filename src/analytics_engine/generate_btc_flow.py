@@ -1,20 +1,8 @@
-#!/usr/bin/env python3
 """
-generate_btc_flow.py
-
-v3: Собираем btc_flow.json на основе:
-- data/btc_snapshot_v2.json (обязателен)
-- data/btc_etp_flow.json (опционально)
-- data/btc_liq_snapshot.json (опционально, + пишем историю в btc_liq_map.json)
-- data/news_sentiment.json (опционально)
-
-И пишем:
-- JSON в data/btc_flow.json
-- агрегированную запись в таблицу market_flow
-
-Новая часть:
-- btc_liq_map.json — история снимков ликвидаций (до 365 записей)
-- анализ двух последних снимков → блок flow["liq_metrics"] + доп. warnings
+Генерация btc_flow.json и запись в таблицу `flows`.
+Использует btc_snapshot.json, btc_etp_flow.json, btc_liq_snapshot.json,
+news_sentiment.json и формирует агрегированный контекст по спецификации
+DATA_PIPELINE.md.
 """
 
 import json
@@ -22,33 +10,30 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.dirname(THIS_DIR)
-PROJECT_ROOT = os.path.dirname(SRC_DIR)
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
 
-from src.data_collector.db_utils import get_db_connection  # type: ignore
+from src.data_collector.db_utils import get_db_connection
 
 LOG_FILE_PATH = os.path.join(PROJECT_ROOT, "logs", "generate_btc_flow.log")
 
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_snapshot_v2.json")
+SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_snapshot.json")
 ETP_PATH = os.path.join(DATA_DIR, "btc_etp_flow.json")
-LIQ_SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_liq_snapshot.json")   # свежий парс
+LIQ_SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_liq_snapshot.json")
 NEWS_PATH = os.path.join(DATA_DIR, "news_sentiment.json")
 FLOW_PATH = os.path.join(DATA_DIR, "btc_flow.json")
-LIQ_HISTORY_PATH = os.path.join(DATA_DIR, "btc_liq_map.json")         # история
+LIQ_HISTORY_PATH = os.path.join(DATA_DIR, "btc_liq_map.json")
 
 SYMBOL_DB = "BTCUSDT"
-
-# сколько снимков хранить в btc_liq_map.json
 MAX_LIQ_HISTORY = 365
 
 logger = logging.getLogger(__name__)
+_market_flow_checked = False
+_market_flow_exists = False
 
 
 # ---------------------------------------------------------------------------
@@ -93,23 +78,6 @@ def load_json(path: str) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def append_liq_history(liq_obj: Dict[str, Any], history_path: str) -> None:
-    """
-    Добавляем текущий снимок карты ликвидаций в файл-историю btc_liq_map.json.
-
-    Формат входного объекта (btc_liq_snapshot.json):
-
-    {
-      "symbol": "BTC",
-      "source": "coinglass_hyperliquid_liq_map",
-      "captured_at_iso": "",
-      "captured_at_ms": null,
-      "current_price": 84714,
-      "zones": [ ... ],
-      "summary": { ... }
-    }
-
-    История хранится как список таких объектов (последние MAX_LIQ_HISTORY).
-    """
     if not liq_obj:
         return
 
@@ -121,7 +89,6 @@ def append_liq_history(liq_obj: Dict[str, Any], history_path: str) -> None:
     if entry.get("captured_at_ms") is None and entry.get("timestamp_ms") is None:
         entry["captured_at_ms"] = ts
 
-    # загружаем историю
     if os.path.exists(history_path):
         try:
             with open(history_path, "r", encoding="utf-8") as f:
@@ -168,9 +135,6 @@ def load_liq_history(history_path: str) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def summarize_zones(zones: List[Dict[str, Any]]) -> Dict[str, float]:
-    """
-    Считает суммарную "силу" ликвидаций по long/short.
-    """
     total_long = 0.0
     total_short = 0.0
     for z in zones:
@@ -186,15 +150,11 @@ def summarize_zones(zones: List[Dict[str, Any]]) -> Dict[str, float]:
     return {
         "total_long": total_long,
         "total_short": total_short,
-        "imbalance": total_short - total_long,  # >0 → сверху больше шортов
+        "imbalance": total_short - total_long,
     }
 
 
 def analyze_liq_history(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """
-    Анализирует ДВА последних снимка истории ликвидаций.
-    Возвращает словарь метрик или None, если данных мало.
-    """
     if len(history) < 2:
         return None
 
@@ -216,7 +176,6 @@ def analyze_liq_history(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     imb_last = summary_last["imbalance"]
     imb_delta = imb_last - imb_prev
 
-    # расстояния до ближайших зон
     current_price = last.get("current_price")
     closest_short_dist = None
     closest_long_dist = None
@@ -240,7 +199,6 @@ def analyze_liq_history(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     except Exception:
         pass
 
-    # изменения по зонам
     def zones_to_map(zs: List[Dict[str, Any]]) -> Dict[Tuple[str, float], float]:
         m: Dict[Tuple[str, float], float] = {}
         for z in zs:
@@ -261,39 +219,35 @@ def analyze_liq_history(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     new_zones: List[Dict[str, Any]] = []
     disappeared_zones: List[Dict[str, Any]] = []
 
-    # зоны, которые были и остались → считаем delta_strength
     for key, prev_strength in prev_map.items():
         last_strength = last_map.get(key)
         side, price = key
         if last_strength is not None:
             delta = last_strength - prev_strength
-            if abs(delta) > 0:  # можно поставить порог, если нужно
-                changed.append({
+            if abs(delta) > 0:
+                changed.append(
+                    {
+                        "side": side,
+                        "price": price,
+                        "prev_strength": prev_strength,
+                        "last_strength": last_strength,
+                        "delta_strength": delta,
+                    }
+                )
+        else:
+            disappeared_zones.append(
+                {
                     "side": side,
                     "price": price,
                     "prev_strength": prev_strength,
-                    "last_strength": last_strength,
-                    "delta_strength": delta,
-                })
-        else:
-            # исчезла
-            disappeared_zones.append({
-                "side": side,
-                "price": price,
-                "prev_strength": prev_strength,
-            })
+                }
+            )
 
-    # новые зоны (были только в last)
     for key, last_strength in last_map.items():
         if key not in prev_map:
             side, price = key
-            new_zones.append({
-                "side": side,
-                "price": price,
-                "last_strength": last_strength,
-            })
+            new_zones.append({"side": side, "price": price, "last_strength": last_strength})
 
-    # сортируем top_growing по абсолютному изменению
     changed_sorted = sorted(
         changed,
         key=lambda x: abs(x.get("delta_strength", 0.0)),
@@ -372,17 +326,21 @@ def build_crowd_and_risk(
         risk_mode = "aggressive_risk_on"
 
     if not etp:
-        warnings.append({
-            "type": "missing_etp",
-            "level": "info",
-            "message": "btc_etp_flow.json missing or invalid; ETF influence not applied",
-        })
+        warnings.append(
+            {
+                "type": "missing_etp",
+                "level": "info",
+                "message": "btc_etp_flow.json missing or invalid; ETF influence not applied",
+            }
+        )
     if not news:
-        warnings.append({
-            "type": "missing_news_sentiment",
-            "level": "info",
-            "message": "news_sentiment.json missing or invalid; news influence not applied",
-        })
+        warnings.append(
+            {
+                "type": "missing_news_sentiment",
+                "level": "info",
+                "message": "news_sentiment.json missing or invalid; news influence not applied",
+            }
+        )
 
     crowd_block: Dict[str, Any] = {
         "bias": crowd_bias,
@@ -399,7 +357,7 @@ def build_crowd_and_risk(
     }
 
     risk_block: Dict[str, Any] = {
-        "global_score": risk_global,
+        "global_score": round(risk_global, 3),
         "mode": risk_mode,
     }
 
@@ -407,102 +365,76 @@ def build_crowd_and_risk(
 
 
 # ---------------------------------------------------------------------------
-# market_flow DB
+# market_flow DB (опционально)
 # ---------------------------------------------------------------------------
 
-def upsert_market_flow(conn, flow: Dict[str, Any]) -> None:
-    ts_value = flow.get("timestamp_ms")
-    if ts_value is None:
-        logger.warning("upsert_market_flow: flow.timestamp_ms is None, using current time")
-        ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    else:
-        ts_ms = int(ts_value)
+def _check_market_flow_table(conn) -> bool:
+    global _market_flow_checked, _market_flow_exists
+    if _market_flow_checked:
+        return _market_flow_exists
+    _market_flow_checked = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SHOW TABLES LIKE 'market_flow'")
+            _market_flow_exists = cur.fetchone() is not None
+    except Exception:
+        _market_flow_exists = False
+    return _market_flow_exists
 
-    symbol = flow.get("symbol", SYMBOL_DB)
-    risk_score = float(flow.get("risk", {}).get("global_score", 0.0))
 
-    derivatives = flow.get("derivatives", {})
-    funding_rate = None
-    oi_change = None
-    if isinstance(derivatives, dict):
-        funding_rate = derivatives.get("funding", {}).get("current")
-        oi_change = derivatives.get("oi", {}).get("change_24h")
+def upsert_flow_row(conn, flow: Dict[str, Any]) -> None:
+    ts_value = flow.get("timestamp_iso") or flow.get("timestamp_ms")
+    if not ts_value:
+        raise ValueError("upsert_flow_row: timestamp missing")
+    ts_dt = (
+        datetime.fromtimestamp(flow["timestamp_ms"] / 1000, tz=timezone.utc)
+        if flow.get("timestamp_ms")
+        else datetime.fromisoformat(str(ts_value).replace("Z", "+00:00"))
+    )
 
-    liq = flow.get("liquidation_zones", {})
-    liq_long = None
-    liq_short = None
-    if isinstance(liq, dict):
-        zones = liq.get("zones") or []
-        if isinstance(zones, list) and zones:
-            summary = summarize_zones(zones)
-            liq_long = summary["total_long"]
-            liq_short = summary["total_short"]
-
-    crowd_sentiment = float(flow.get("crowd", {}).get("score", 0.0))
-
-    json_data = json.dumps(flow, ensure_ascii=False)
+    sql = """
+        INSERT INTO flows (
+            symbol,
+            timestamp,
+            derivatives_json,
+            etp_summary_json,
+            liquidation_json,
+            crowd_json,
+            trap_index_json,
+            news_sentiment_json,
+            warnings_json,
+            risk_global_score,
+            risk_mode
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE
+            derivatives_json=VALUES(derivatives_json),
+            etp_summary_json=VALUES(etp_summary_json),
+            liquidation_json=VALUES(liquidation_json),
+            crowd_json=VALUES(crowd_json),
+            trap_index_json=VALUES(trap_index_json),
+            news_sentiment_json=VALUES(news_sentiment_json),
+            warnings_json=VALUES(warnings_json),
+            risk_global_score=VALUES(risk_global_score),
+            risk_mode=VALUES(risk_mode)
+    """
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM market_flow WHERE symbol = %s AND timestamp_ms = %s LIMIT 1",
-            (symbol, ts_ms),
+            sql,
+            (
+                flow.get("symbol", SYMBOL_DB),
+                ts_dt,
+                json.dumps(flow.get("derivatives"), ensure_ascii=False),
+                json.dumps(flow.get("etp_summary"), ensure_ascii=False),
+                json.dumps(flow.get("liquidation_zones"), ensure_ascii=False),
+                json.dumps(flow.get("crowd"), ensure_ascii=False),
+                json.dumps(flow.get("trap_index"), ensure_ascii=False),
+                json.dumps(flow.get("news_sentiment"), ensure_ascii=False),
+                json.dumps(flow.get("warnings"), ensure_ascii=False),
+                (flow.get("risk") or {}).get("global_score"),
+                (flow.get("risk") or {}).get("mode"),
+            ),
         )
-        row = cur.fetchone()
-        if row:
-            flow_id = int(row[0])
-            sql = """
-                UPDATE market_flow
-                SET crowd_sentiment=%s,
-                    funding_rate=%s,
-                    open_interest_change=%s,
-                    liquidations_long=%s,
-                    liquidations_short=%s,
-                    risk_score=%s,
-                    json_data=%s
-                WHERE id=%s
-            """
-            cur.execute(
-                sql,
-                (
-                    crowd_sentiment,
-                    funding_rate,
-                    oi_change,
-                    liq_long,
-                    liq_short,
-                    risk_score,
-                    json_data,
-                    flow_id,
-                ),
-            )
-        else:
-            sql = """
-                INSERT INTO market_flow (
-                    timestamp_ms,
-                    symbol,
-                    crowd_sentiment,
-                    funding_rate,
-                    open_interest_change,
-                    liquidations_long,
-                    liquidations_short,
-                    risk_score,
-                    json_data
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """
-            cur.execute(
-                sql,
-                (
-                    ts_ms,
-                    symbol,
-                    crowd_sentiment,
-                    funding_rate,
-                    oi_change,
-                    liq_long,
-                    liq_short,
-                    risk_score,
-                    json_data,
-                ),
-            )
     conn.commit()
 
 
@@ -526,10 +458,10 @@ def build_btc_flow(
 
     etp_summary = None
     if etp and isinstance(etp.get("summary"), dict):
-        etp_summary = etp["summary"]
+        etp_summary = etp.get("summary")
 
     liq_block = None
-    if liq and liq.get("symbol") in ("BTC", "BTCUSDT"):
+    if liq:
         liq_block = {
             "source": liq.get("source"),
             "current_price": liq.get("current_price"),
@@ -584,7 +516,7 @@ def main() -> None:
 
     snapshot = load_json(SNAPSHOT_PATH)
     if not snapshot:
-        logger.error("generate_btc_flow: btc_snapshot_v2.json not found or invalid, abort")
+        logger.error("generate_btc_flow: btc_snapshot.json not found or invalid, abort")
         sys.exit(1)
 
     etp = load_json(ETP_PATH)
@@ -598,18 +530,15 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        # 1) сохраняем свежий снимок в историю
         if liq_snapshot:
             append_liq_history(liq_snapshot, LIQ_HISTORY_PATH)
 
-        # 2) анализируем два последних снимка
         liq_metrics = None
         extra_warnings: List[Dict[str, Any]] = []
         history = load_liq_history(LIQ_HISTORY_PATH)
         if history:
             liq_metrics = analyze_liq_history(history)
             if liq_metrics is not None:
-                # примитивные предупреждения v1
                 imb_delta = liq_metrics.get("imbalance_delta")
                 imb_last = liq_metrics.get("imbalance_last")
                 if imb_last is not None and imb_delta is not None:
@@ -617,26 +546,50 @@ def main() -> None:
                         imb_last_f = float(imb_last)
                         imb_delta_f = float(imb_delta)
                         if imb_last_f > 0 and imb_delta_f > 0:
-                            extra_warnings.append({
-                                "type": "liq_short_pressure_up",
-                                "level": "info",
-                                "message": "Short-side liquidity above price is growing (squeeze risk up).",
-                            })
+                            extra_warnings.append(
+                                {
+                                    "type": "liq_short_pressure_up",
+                                    "level": "info",
+                                    "message": "Short-side liquidity above price is growing (squeeze risk up).",
+                                }
+                            )
                         elif imb_last_f < 0 and imb_delta_f < 0:
-                            extra_warnings.append({
-                                "type": "liq_long_pressure_up",
-                                "level": "info",
-                                "message": "Long-side liquidity below price is growing (downside sweep risk up).",
-                            })
+                            extra_warnings.append(
+                                {
+                                    "type": "liq_long_pressure_up",
+                                    "level": "info",
+                                    "message": "Long-side liquidity below price is growing (downside sweep risk up).",
+                                }
+                            )
                     except Exception:
                         pass
 
-        # 3) собираем flow
         flow = build_btc_flow(snapshot, etp, liq_snapshot, news, liq_metrics, extra_warnings)
         save_flow_to_file(flow)
-        upsert_market_flow(conn, flow)
+        upsert_flow_row(conn, flow)
+
+        if _check_market_flow_table(conn):
+            # минимальный апдейт исторической таблицы, если она присутствует
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO market_flow (timestamp_ms, symbol, json_data)
+                        VALUES (%s,%s,%s)
+                        ON DUPLICATE KEY UPDATE json_data=VALUES(json_data)
+                        """,
+                        (
+                            flow.get("timestamp_ms"),
+                            flow.get("symbol", SYMBOL_DB),
+                            json.dumps(flow, ensure_ascii=False),
+                        ),
+                    )
+                conn.commit()
+            except Exception:
+                logger.warning("generate_btc_flow: market_flow table exists but insert failed", exc_info=True)
+
         logger.info(
-            "generate_btc_flow: saved flow to %s and upserted into market_flow (ts=%s)",
+            "generate_btc_flow: saved flow to %s and upserted into flows (ts=%s)",
             FLOW_PATH,
             flow.get("timestamp_iso"),
         )
