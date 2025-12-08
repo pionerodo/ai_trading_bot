@@ -249,8 +249,14 @@ def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp
     snapshot_id = None
     flow_id = None
 
-    sql_snapshot = "SELECT id FROM snapshots WHERE symbol=%s AND captured_at_utc=%s LIMIT 1"
-    sql_flow = "SELECT id FROM flows WHERE symbol=%s AND captured_at_utc=%s LIMIT 1"
+    if isinstance(snapshot_timestamp, str):
+        snapshot_timestamp = datetime.fromisoformat(snapshot_timestamp)
+
+    if isinstance(flow_timestamp, str):
+        flow_timestamp = datetime.fromisoformat(flow_timestamp)
+
+    sql_snapshot = "SELECT id FROM snapshots WHERE symbol=%s AND created_at=%s LIMIT 1"
+    sql_flow = "SELECT id FROM flows WHERE symbol=%s AND created_at=%s LIMIT 1"
 
     with conn.cursor() as cur:
         cur.execute(sql_snapshot, ("BTCUSDT", snapshot_timestamp))
