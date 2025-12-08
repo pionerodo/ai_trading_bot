@@ -28,6 +28,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_FILE)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from src.core.metrics import get_metrics_snapshot, increment_metric
+from src.core.structured_logging import log_error, log_info, log_warning
 from src.data_collector.db_utils import get_db_connection
 
 # === НАСТРОЙКИ COLLECTOR'А ===
@@ -157,15 +159,38 @@ def get_latest_open_time(conn, symbol: str, timeframe: str) -> Optional[int]:
         FROM candles
         WHERE symbol = %s AND timeframe = %s
     """
-    with conn.cursor() as cur:
-        cur.execute(sql, (symbol, timeframe))
-        row = cur.fetchone()
-        if not row or row[0] is None:
-            return None
-        try:
-            return int(row[0].timestamp() * 1000)
-        except Exception:
-            return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, (symbol, timeframe))
+            row = cur.fetchone()
+    except Exception as exc:
+        increment_metric(
+            "candles_select_failures",
+            labels={"symbol": symbol, "timeframe": timeframe},
+        )
+        log_error(
+            logger,
+            "candles_latest_open_time_failed",
+            symbol=symbol,
+            timeframe=timeframe,
+            error=str(exc),
+        )
+        return None
+
+    if not row or row[0] is None:
+        return None
+    try:
+        return int(row[0].timestamp() * 1000)
+    except Exception as exc:
+        log_warning(
+            logger,
+            "candles_latest_open_time_invalid",
+            symbol=symbol,
+            timeframe=timeframe,
+            raw_value=str(row[0]),
+            error=str(exc),
+        )
+        return None
 
 
 def insert_candles(
@@ -205,27 +230,42 @@ def insert_candles(
     """
 
     inserted = 0
-    with conn.cursor() as cur:
-        for c in candles:
-            open_dt = datetime.utcfromtimestamp(int(c["open_time"]) / 1000)
-            close_dt = datetime.utcfromtimestamp(int(c["close_time"]) / 1000)
-            params = (
-                symbol,
-                timeframe,
-                open_dt,
-                close_dt,
-                c["open"],
-                c["high"],
-                c["low"],
-                c["close"],
-                c["volume"],
-                c.get("quote_volume"),
-                c.get("trades_count"),
-            )
-            cur.execute(sql, params)
-            inserted += 1
+    try:
+        with conn.cursor() as cur:
+            for c in candles:
+                open_dt = datetime.utcfromtimestamp(int(c["open_time"]) / 1000)
+                close_dt = datetime.utcfromtimestamp(int(c["close_time"]) / 1000)
+                params = (
+                    symbol,
+                    timeframe,
+                    open_dt,
+                    close_dt,
+                    c["open"],
+                    c["high"],
+                    c["low"],
+                    c["close"],
+                    c["volume"],
+                    c.get("quote_volume"),
+                    c.get("trades_count"),
+                )
+                cur.execute(sql, params)
+                inserted += 1
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        increment_metric(
+            "candles_insert_failures",
+            labels={"symbol": symbol, "timeframe": timeframe},
+        )
+        log_error(
+            logger,
+            "candles_insert_failed",
+            symbol=symbol,
+            timeframe=timeframe,
+            error=str(exc),
+        )
+        raise
 
-    conn.commit()
     return inserted
 
 
@@ -245,26 +285,33 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
 
     if last_open_time is None:
         start_time_ms = now_ms - LOOKBACK_MINUTES_IF_EMPTY * 60_000
-        logger.info(
-            "candles[%s, %s]: table empty, starting from %s",
-            symbol,
-            timeframe,
-            datetime.fromtimestamp(start_time_ms / 1000, tz=timezone.utc).isoformat(),
+        log_info(
+            logger,
+            "candles_bootstrap",
+            symbol=symbol,
+            timeframe=timeframe,
+            start_at=datetime.fromtimestamp(
+                start_time_ms / 1000, tz=timezone.utc
+            ).isoformat(),
         )
     else:
         start_time_ms = last_open_time + step_ms
-        logger.info(
-            "candles[%s, %s]: last open_time = %s, starting from next candle",
-            symbol,
-            timeframe,
-            datetime.fromtimestamp(last_open_time / 1000, tz=timezone.utc).isoformat(),
+        log_info(
+            logger,
+            "candles_resume",
+            symbol=symbol,
+            timeframe=timeframe,
+            last_open_time=datetime.fromtimestamp(
+                last_open_time / 1000, tz=timezone.utc
+            ).isoformat(),
         )
 
     if start_time_ms >= now_ms:
-        logger.info(
-            "candles[%s, %s]: up to date (start_time_ms >= now_ms), nothing to do",
-            symbol,
-            timeframe,
+        log_info(
+            logger,
+            "candles_up_to_date",
+            symbol=symbol,
+            timeframe=timeframe,
         )
         return
 
@@ -283,22 +330,29 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
                 limit=BINANCE_MAX_LIMIT,
             )
         except Exception as e:
-            logger.error(
-                "candles[%s, %s]: error fetching klines from Binance: %s",
-                symbol,
-                timeframe,
-                e,
-                exc_info=True,
+            increment_metric(
+                "candles_fetch_failures",
+                labels={"symbol": symbol, "timeframe": timeframe},
+            )
+            log_error(
+                logger,
+                "candles_fetch_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                start_ms=current_start,
+                end_ms=batch_end,
+                error=str(e),
             )
             break
 
         if not klines:
-            logger.info(
-                "candles[%s, %s]: no klines returned (start=%s, end=%s), stopping",
-                symbol,
-                timeframe,
-                current_start,
-                batch_end,
+            log_warning(
+                logger,
+                "candles_empty_batch",
+                symbol=symbol,
+                timeframe=timeframe,
+                start_ms=current_start,
+                end_ms=batch_end,
             )
             break
 
@@ -309,21 +363,16 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
         try:
             inserted = insert_candles(conn, symbol, timeframe, klines)
             total_inserted += inserted
-            logger.info(
-                "candles[%s, %s]: inserted %d candles (batch), total_inserted=%d",
-                symbol,
-                timeframe,
-                inserted,
-                total_inserted,
+            log_info(
+                logger,
+                "candles_batch_inserted",
+                symbol=symbol,
+                timeframe=timeframe,
+                inserted=inserted,
+                total_inserted=total_inserted,
             )
-        except Exception as e:
-            logger.error(
-                "candles[%s, %s]: error inserting candles into DB: %s",
-                symbol,
-                timeframe,
-                e,
-                exc_info=True,
-            )
+        except Exception:
+            # Detailed logging and metrics are handled inside insert_candles().
             break
 
         last_batch_open = klines[-1]["open_time"]
@@ -331,22 +380,30 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
 
         time.sleep(0.1)
 
-    logger.info(
-        "candles[%s, %s]: done, total inserted = %d",
-        symbol,
-        timeframe,
-        total_inserted,
+    log_info(
+        logger,
+        "candles_collect_complete",
+        symbol=symbol,
+        timeframe=timeframe,
+        total_inserted=total_inserted,
     )
 
 
 def main() -> None:
     setup_logging()
-    logger.info("candles_collector: started")
+    log_info(logger, "candles_collector_started", symbol=SYMBOL, timeframes=TIMEFRAMES)
 
     try:
         conn = get_db_connection()
     except Exception as e:
-        logger.error("candles_collector: cannot get DB connection: %s", e, exc_info=True)
+        increment_metric("candles_db_connection_failures", labels={"symbol": SYMBOL})
+        log_error(
+            logger,
+            "candles_db_connection_failed",
+            symbol=SYMBOL,
+            timeframes=TIMEFRAMES,
+            error=str(e),
+        )
         sys.exit(1)
 
     try:
@@ -358,7 +415,13 @@ def main() -> None:
         except Exception:
             pass
 
-    logger.info("candles_collector: finished")
+    log_info(
+        logger,
+        "candles_collector_finished",
+        symbol=SYMBOL,
+        timeframes=TIMEFRAMES,
+        metrics=get_metrics_snapshot(),
+    )
 
 
 if __name__ == "__main__":
