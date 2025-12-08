@@ -71,12 +71,14 @@ def load_latest_price_for_symbol(db_session_factory, symbol: str = "BTCUSDT") ->
         row = (
             session.query(Snapshot)
             .filter(Snapshot.symbol == symbol)
-            .order_by(Snapshot.timestamp.desc())
+            .order_by(Snapshot.created_at.desc())
             .first()
         )
         if not row:
             return None
-        return _as_decimal(row.price)
+        payload = row.payload or {}
+        price_value = payload.get("price") or payload.get("last_price")
+        return _as_decimal(price_value)
 
 
 def load_linked_decision_and_liq_zone(
@@ -100,9 +102,9 @@ def load_linked_decision_and_liq_zone(
             session.query(LiquidationZone)
             .filter(
                 LiquidationZone.symbol == position.symbol,
-                LiquidationZone.cluster_id == decision.liq_tp_zone_id,
+                LiquidationZone.id == decision.liq_tp_zone_id,
             )
-            .order_by(LiquidationZone.captured_at_utc.desc())
+            .order_by(LiquidationZone.created_at.desc())
             .first()
         )
         return decision, liq_zone
