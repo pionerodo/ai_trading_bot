@@ -1,11 +1,8 @@
-#!/usr/bin/env python3
 """
-execution_engine.py
-
 v1 – простой бумажный Execution Engine:
 
 - читает:
-    - data/btc_snapshot_v2.json
+    - data/btc_snapshot.json
     - data/btc_flow.json
     - data/decision.json
 - смотрит текущее состояние в таблице bot_state
@@ -26,19 +23,17 @@ from typing import Any, Dict, Optional, Tuple
 
 # --- Пути проекта и импорт DB utils ---
 
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.dirname(THIS_DIR)              # .../src
-PROJECT_ROOT = os.path.dirname(SRC_DIR)          # .../ai_trading_bot
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
 
-from src.data_collector.db_utils import get_db_connection  # type: ignore
+from src.data_collector.db_utils import get_db_connection
 
 LOG_FILE_PATH = os.path.join(PROJECT_ROOT, "logs", "execution_engine.log")
 
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_snapshot_v2.json")
+SNAPSHOT_PATH = os.path.join(DATA_DIR, "btc_snapshot.json")
 FLOW_PATH = os.path.join(DATA_DIR, "btc_flow.json")
 DECISION_PATH = os.path.join(DATA_DIR, "decision.json")
 
@@ -96,7 +91,9 @@ def get_bot_state(conn) -> Dict[str, Any]:
     Если строки нет — создаём дефолтную.
     """
     with conn.cursor() as cur:
-        cur.execute("SELECT id, position, entry_price, entry_time, qty, stop_loss, take_profit, equity, updated_at FROM bot_state WHERE id = 1")
+        cur.execute(
+            "SELECT id, position, entry_price, entry_time, qty, stop_loss, take_profit, equity, updated_at FROM bot_state WHERE id = 1"
+        )
         row = cur.fetchone()
 
         if row:
@@ -112,7 +109,6 @@ def get_bot_state(conn) -> Dict[str, Any]:
                 "updated_at": row[8],
             }
 
-        # если ничего нет – создаём дефолтную строку
         logger.info("execution_engine: bot_state row not found, inserting default")
         cur.execute(
             """
@@ -198,7 +194,7 @@ def insert_execution_row(
                 price,
                 qty,
                 status,
-                exchange_order_id,
+                order_id,
                 json_data
             )
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
@@ -255,13 +251,11 @@ def calc_order_params(
 
     price = float(decision.get("price") or 0.0)
     if price <= 0:
-        # fallback: на всякий случай не даём деления на 0
         raise RuntimeError("execution_engine: invalid price in decision")
 
     ts_ms = int(decision.get("timestamp_ms") or int(datetime.now(timezone.utc).timestamp() * 1000))
 
     qty = NOTIONAL_PER_TRADE / price
-    # округляем до разумного количества знаков
     qty = float(f"{qty:.6f}")
 
     return side, price, qty, ts_ms
