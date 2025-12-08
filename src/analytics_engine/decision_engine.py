@@ -245,20 +245,33 @@ def _apply_risk_checks(direction: str, confidence: float, price: float, atr: flo
 # ---------------------------------------------------------------------------
 
 
+def _normalize_datetime(value: datetime) -> datetime:
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
 def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp: datetime) -> Tuple[Optional[int], Optional[int]]:
     snapshot_id = None
     flow_id = None
 
-    if isinstance(snapshot_timestamp, str):
-        snapshot_timestamp = datetime.fromisoformat(snapshot_timestamp)
+    snapshot_timestamp = _normalize_datetime(snapshot_timestamp)
+    flow_timestamp = _normalize_datetime(flow_timestamp)
 
-    if isinstance(flow_timestamp, str):
-        flow_timestamp = datetime.fromisoformat(flow_timestamp)
+    placeholder = "%s"
+    is_sqlite = conn.__class__.__module__.startswith("sqlite3")
+    if is_sqlite:
+        placeholder = "?"
 
-    sql_snapshot = "SELECT id FROM snapshots WHERE symbol=%s AND created_at=%s LIMIT 1"
-    sql_flow = "SELECT id FROM flows WHERE symbol=%s AND created_at=%s LIMIT 1"
+    sql_snapshot = (
+        f"SELECT id FROM snapshots WHERE symbol={placeholder} AND captured_at_utc={placeholder} LIMIT 1"
+    )
+    sql_flow = f"SELECT id FROM flows WHERE symbol={placeholder} AND captured_at_utc={placeholder} LIMIT 1"
 
-    with conn.cursor() as cur:
+    cur = conn.cursor()
+    try:
         cur.execute(sql_snapshot, ("BTCUSDT", snapshot_timestamp))
         row = cur.fetchone()
         if row:
@@ -268,11 +281,19 @@ def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp
         row = cur.fetchone()
         if row:
             flow_id = row[0]
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
 
     return snapshot_id, flow_id
 
 
 def _insert_decision(conn, decision: Decision, snapshot_ts: datetime) -> None:
+    snapshot_ts = _normalize_datetime(snapshot_ts)
+    created_ts = _normalize_datetime(datetime.now(timezone.utc))
+
     columns = [
         "symbol",
         "timestamp",
@@ -296,7 +317,7 @@ def _insert_decision(conn, decision: Decision, snapshot_ts: datetime) -> None:
     values = (
         "BTCUSDT",
         snapshot_ts,
-        datetime.now(timezone.utc),
+        created_ts,
         decision.action,
         decision.confidence,
         decision.rationale,
