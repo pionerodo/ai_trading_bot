@@ -128,42 +128,73 @@ ai_trading_bot/
 ## 4. JSON Data Pipeline
 
 ### 4.1 `btc_snapshot.json`
-Генерируется каждые 5 минут.  
-Содержит:
+Генерируется каждые 5 минут. Минимальный контракт:
 
-- цену,
-- свечи,
-- структуру рынка,
-- импульс,
-- ATR,
-- режим сессии.
+- `symbol`, `timestamp_iso`, `timestamp_ms`, `price`;
+- блок `candles` с ключами `tf_1m`, `tf_5m`, `tf_15m`, `tf_1h` (поля `o/h/l/c/v`);
+- опционально: `market_structure`, `momentum`, `session`.
 
 ### 4.2 `btc_flow.json`
-Агрегирует:
+Агрегирует в тот же таймстемп:
 
-- derivatives,
-- ETF summary,
-- liquidation zones,
-- sentiment,
-- crowd/trap/warnings,
-- общий риск.
+- `derivatives`,
+- `etp_summary` (из `btc_etp_flow.json`),
+- `liquidation_zones` (из `btc_liquidation_map.json`),
+- `crowd`, `trap_index`, `warnings`,
+- `news_sentiment`,
+- `risk` (`global_score`, `mode`).
 
 ### 4.3 `decision.json`
-Пример структуры:
+Готовый контракт, который читает Execution Engine и API:
 
 ```json
 {
+  "symbol": "BTCUSDT",
+  "timestamp_iso": "2025-11-28T10:05:00Z",
   "action": "long",
+  "reason": "trend_up_multi_tf_with_etf_support_and_liq_below",
   "entry_zone": [90700, 90900],
   "sl": 89800,
   "tp1": 92200,
   "tp2": 93500,
   "risk_level": 3,
   "position_size_usdt": 1000,
+  "leverage": 3,
   "confidence": 0.76,
-  "reason": "trend_up_multi_tf_with_etf_support"
+  "risk_checks": {
+    "daily_dd_ok": true,
+    "weekly_dd_ok": true,
+    "max_trades_per_day_ok": true,
+    "session_ok": true,
+    "no_major_news": false
+  }
 }
 ```
+
+Полные обязательные поля и связи → `DATA_MODELS.md`.
+
+### 4.4 Конфиги и форматы входов/выходов
+
+- Базовые настройки живут в `config/config.yaml` (или `config.local.yaml`):
+
+```yaml
+app:
+  environment: "dev"
+  symbol: "BTCUSDT"
+analysis:
+  cycle_seconds: 300
+risk:
+  max_daily_dd_pct: -2.0
+  max_weekly_dd_pct: -5.0
+  max_position_risk_pct: 1.0
+  max_leverage: 5
+execution:
+  max_open_positions: 1
+  min_entry_confidence: 0.6
+```
+
+- `app.symbol` обязан совпадать с `symbol` в `btc_snapshot.json`, `btc_flow.json` и `decision.json`.
+- API/Dashboard принимает входы строго по схемам из `INPUT_FORMATS.md` и выводит их же в ответах `GET /api/snapshot`, `/api/flow`, `/api/decision`.
 
 ---
 
