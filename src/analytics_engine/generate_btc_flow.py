@@ -369,34 +369,6 @@ def upsert_market_flow(conn, flow: Dict[str, Any], ts: datetime) -> None:
             current_price=%s
         WHERE id=%s
     """
-
-def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
-    sql = """
-        INSERT INTO flows (
-            symbol,
-            timestamp,
-            current_price,
-            etp_net_flow_usd,
-            crowd_bias_score,
-            trap_index_score,
-            risk_global_score,
-            warnings_json,
-            liquidation_json,
-            etp_summary_json,
-            payload_json
-        )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        ON DUPLICATE KEY UPDATE
-            current_price=VALUES(current_price),
-            etp_net_flow_usd=VALUES(etp_net_flow_usd),
-            crowd_bias_score=VALUES(crowd_bias_score),
-            trap_index_score=VALUES(trap_index_score),
-            risk_global_score=VALUES(risk_global_score),
-            warnings_json=VALUES(warnings_json),
-            liquidation_json=VALUES(liquidation_json),
-            etp_summary_json=VALUES(etp_summary_json),
-            payload_json=VALUES(payload_json)
-    """
     with conn.cursor() as cur:
         cur.execute(select_sql, (symbol, timestamp_ms))
         row = cur.fetchone()
