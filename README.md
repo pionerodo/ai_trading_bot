@@ -125,6 +125,22 @@ ai_trading_bot/
 
 ---
 
+## Environment variables
+
+Приложение проверяет наличие обязательных переменных окружения при запуске
+подключений к БД. Укажите их в `.env` (см. `.env.example`) или в окружении
+процесса:
+
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` — подключение к MariaDB/MySQL.
+- `BINANCE_API_KEY`, `BINANCE_API_SECRET` — нужны только при работе с Binance.
+- Дополнительно можно задать `BINANCE_TESTNET` и `BINANCE_BASE_ASSET`.
+
+Если какие-то значения не заданы, код завершится с ошибкой при попытке
+подключения. YAML-конфиг (`config/config.yaml`) может содержать бэкап-значения,
+но приоритет всегда у переменных окружения.
+
+---
+
 ## 4. JSON Data Pipeline
 
 ### 4.1 `btc_snapshot.json`

@@ -15,11 +15,11 @@ logging:
   backup_count: 5
 
 database:
-  host: "127.0.0.1"
-  port: 3306
-  user: "ai_trader"
-  password: "2RRS4bnZz2WHntsB"
-  name: "ai_trading_bot"
+  host: "127.0.0.1"          # override with DB_HOST
+  port: 3306                  # override with DB_PORT
+  user: "ai_trader"          # override with DB_USER
+  password: "changeme"       # override with DB_PASSWORD
+  name: "ai_trading_bot"     # override with DB_NAME
   echo: false
 
 risk:

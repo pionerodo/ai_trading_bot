@@ -11,24 +11,22 @@ PROJECT_ROOT = str(P(__file__).resolve().parent.parent)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.core.config_loader import load_config
+from src.db.settings import load_database_settings
 
 
 SQLITE_PATH = Path("db/ai_trading_bot_dev.sqlite")
 
 
 def main():
-    # Загружаем конфигурацию бота
-    cfg = load_config()
-    db_cfg = cfg["database"]
+    db_settings = load_database_settings()
 
     # Подключение к MariaDB через конфиг
     conn_mysql = pymysql.connect(
-        host=db_cfg["host"],
-        port=db_cfg["port"],
-        user=db_cfg["user"],
-        password=db_cfg["password"],
-        database=db_cfg["name"],   # <-- ВАЖНО: name из config.yaml
+        host=db_settings.host,
+        port=db_settings.port,
+        user=db_settings.user,
+        password=db_settings.password,
+        database=db_settings.name,   # <-- ВАЖНО: name из config.yaml/env
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )
