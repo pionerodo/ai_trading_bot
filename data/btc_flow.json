@@ -1,21 +1,16 @@
 {
   "symbol": "BTCUSDT",
-  "timestamp_iso": "2025-12-07T23:10:02.188479Z",
-  "timestamp_ms": 1765149002188,
-  "price": 89590.0,
+  "timestamp_iso": "2025-12-08T01:02:45.676415Z",
+  "timestamp_ms": 1765155765676,
+  "price": 90293.9,
   "derivatives": {
     "oi": {
-      "value": 86951.63,
+      "value": 87133.437,
       "change_24h": null
     },
     "funding": {
-      "current": -1.251e-05,
+      "current": -9.69e-06,
       "avg_24h": null
-    },
-    "taker": {
-      "buy_volume": 681.374,
-      "sell_volume": 303.914,
-      "buy_ratio": 2.242
     }
   },
   "etp_summary": null,
