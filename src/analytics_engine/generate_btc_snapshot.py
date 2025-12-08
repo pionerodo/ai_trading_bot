@@ -1,11 +1,6 @@
 """
-Генерация btc_snapshot.json и запись в таблицу `snapshots`.
-Схема (ai_trading_bot.sql):
-- captured_at_utc: DATETIME (UTC)
-- price: DECIMAL
-- timeframe: VARCHAR(16)
-- structure_tag, momentum_tag, atr_5m, session: tags/metrics
-- payload_json: longtext (полный снимок)
+Генерация btc_snapshot.json и запись в таблицу `snapshots` по актуальной
+схеме: timestamp (DATETIME UTC), OHLC блока 5m и связанные JSON-поля.
 """
 
 import json
@@ -174,7 +169,7 @@ def detect_session(now_utc: datetime) -> str:
 
 
 def build_snapshot(conn) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    now_utc = datetime.utcnow().replace(second=0, microsecond=0)
     ts_ms = int(now_utc.timestamp() * 1000)
     ts_iso = now_utc.isoformat()
 
@@ -213,7 +208,6 @@ def build_snapshot(conn) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {
         "symbol": SYMBOL_SNAPSHOT,
         "timestamp": ts_iso,
-        "captured_at_utc": ts_iso,
         "timestamp_ms": ts_ms,
         "price": last_price,
         "timeframe": SNAPSHOT_TIMEFRAME,
@@ -234,22 +228,27 @@ def persist_snapshot(conn, snapshot: Dict[str, Any], captured_at: datetime) -> i
     sql = """
         INSERT INTO snapshots (
             symbol,
-            captured_at_utc,
+            timestamp,
             price,
-            timeframe,
-            structure_tag,
-            momentum_tag,
-            atr_5m,
-            session,
-            payload_json
-        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            o_5m,
+            h_5m,
+            l_5m,
+            c_5m,
+            candles_json,
+            market_structure_json,
+            momentum_json,
+            session_json
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE
             price=VALUES(price),
-            structure_tag=VALUES(structure_tag),
-            momentum_tag=VALUES(momentum_tag),
-            atr_5m=VALUES(atr_5m),
-            session=VALUES(session),
-            payload_json=VALUES(payload_json)
+            o_5m=VALUES(o_5m),
+            h_5m=VALUES(h_5m),
+            l_5m=VALUES(l_5m),
+            c_5m=VALUES(c_5m),
+            candles_json=VALUES(candles_json),
+            market_structure_json=VALUES(market_structure_json),
+            momentum_json=VALUES(momentum_json),
+            session_json=VALUES(session_json)
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -258,12 +257,14 @@ def persist_snapshot(conn, snapshot: Dict[str, Any], captured_at: datetime) -> i
                 snapshot.get("symbol", SYMBOL_DB),
                 captured_at,
                 snapshot.get("price"),
-                snapshot.get("timeframe", SNAPSHOT_TIMEFRAME),
-                snapshot.get("structure", {}).get("tag"),
-                snapshot.get("momentum", {}).get("tag"),
-                snapshot.get("structure", {}).get("atr"),
-                snapshot.get("session", {}).get("current"),
-                json.dumps(snapshot, ensure_ascii=False),
+                snapshot.get("candles", {}).get("5m", {}).get("open"),
+                snapshot.get("candles", {}).get("5m", {}).get("high"),
+                snapshot.get("candles", {}).get("5m", {}).get("low"),
+                snapshot.get("candles", {}).get("5m", {}).get("close"),
+                json.dumps(snapshot.get("candles"), ensure_ascii=False),
+                json.dumps(snapshot.get("structure"), ensure_ascii=False),
+                json.dumps(snapshot.get("momentum"), ensure_ascii=False),
+                json.dumps(snapshot.get("session"), ensure_ascii=False),
             ),
         )
         conn.commit()
@@ -292,7 +293,7 @@ def main() -> None:
 
     try:
         snapshot = build_snapshot(conn)
-        captured_at = datetime.fromisoformat(snapshot["captured_at_utc"])
+        captured_at = datetime.fromisoformat(snapshot["timestamp"])
         db_id = persist_snapshot(conn, snapshot, captured_at)
         if db_id:
             snapshot["db_id"] = db_id
