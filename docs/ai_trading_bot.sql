@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: localhost
--- Время создания: Дек 08 2025 г., 00:15
+-- Время создания: Дек 08 2025 г., 00:54
 -- Версия сервера: 10.11.10-MariaDB-log
 -- Версия PHP: 8.3.25
 
@@ -46,16 +46,18 @@ CREATE TABLE `bot_state` (
 --
 
 CREATE TABLE `candles` (
-  `id` bigint(20) NOT NULL,
+  `id` bigint(20) UNSIGNED NOT NULL,
   `symbol` varchar(20) NOT NULL,
   `timeframe` varchar(10) NOT NULL,
-  `open_time` bigint(20) NOT NULL,
-  `open` decimal(20,8) NOT NULL,
-  `high` decimal(20,8) NOT NULL,
-  `low` decimal(20,8) NOT NULL,
-  `close` decimal(20,8) NOT NULL,
-  `volume` decimal(20,8) NOT NULL,
-  `close_time` bigint(20) NOT NULL
+  `open_time` datetime NOT NULL,
+  `close_time` datetime NOT NULL,
+  `open_price` decimal(20,8) DEFAULT NULL,
+  `high_price` decimal(20,8) DEFAULT NULL,
+  `low_price` decimal(20,8) DEFAULT NULL,
+  `close_price` decimal(20,8) DEFAULT NULL,
+  `volume` decimal(28,12) NOT NULL,
+  `quote_volume` decimal(28,12) DEFAULT NULL,
+  `trades_count` bigint(20) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- --------------------------------------------------------
@@ -65,19 +67,18 @@ CREATE TABLE `candles` (
 --
 
 CREATE TABLE `decisions` (
-  `id` bigint(20) NOT NULL,
-  `timestamp_ms` bigint(20) NOT NULL,
+  `id` bigint(20) UNSIGNED NOT NULL,
   `created_at_utc` datetime DEFAULT NULL,
   `symbol` varchar(20) NOT NULL,
-  `timestamp` datetime DEFAULT NULL,
+  `timestamp` datetime NOT NULL,
   `timeframe` varchar(16) NOT NULL DEFAULT '5m',
   `action` enum('long','short','flat') NOT NULL,
-  `confidence` float NOT NULL,
+  `confidence` decimal(10,8) NOT NULL DEFAULT 0.00000000,
   `risk_checks_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`risk_checks_json`)),
   `snapshot_id` bigint(20) DEFAULT NULL,
   `flow_id` bigint(20) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `reason` text DEFAULT NULL,
+  `reason` varchar(255) NOT NULL,
   `entry_min_price` decimal(20,8) DEFAULT NULL,
   `entry_max_price` decimal(20,8) DEFAULT NULL,
   `sl_price` decimal(20,8) DEFAULT NULL,
@@ -91,9 +92,9 @@ CREATE TABLE `decisions` (
   `sl_pct` decimal(10,6) DEFAULT NULL,
   `tp1_rr` decimal(10,4) DEFAULT NULL,
   `tp2_rr` decimal(10,4) DEFAULT NULL,
-  `position_size_usdt` decimal(20,8) DEFAULT NULL,
-  `leverage` decimal(10,4) DEFAULT NULL,
-  `risk_level` tinyint(4) DEFAULT NULL,
+  `position_size_usdt` decimal(20,8) NOT NULL DEFAULT 0.00000000,
+  `leverage` decimal(10,4) NOT NULL DEFAULT 0.0000,
+  `risk_level` int(11) NOT NULL DEFAULT 0,
   `risk_mode` enum('risk_off','cautious','neutral','aggressive') NOT NULL DEFAULT 'neutral',
   `daily_dd_ok` tinyint(1) NOT NULL DEFAULT 1,
   `weekly_dd_ok` tinyint(1) NOT NULL DEFAULT 1,
@@ -116,14 +117,20 @@ CREATE TABLE `decisions` (
 --
 
 CREATE TABLE `derivatives` (
-  `id` bigint(20) NOT NULL,
-  `timestamp_ms` bigint(20) NOT NULL,
+  `id` bigint(20) UNSIGNED NOT NULL,
   `symbol` varchar(20) NOT NULL,
-  `open_interest` double DEFAULT NULL,
-  `funding_rate` double DEFAULT NULL,
-  `taker_buy_volume` double DEFAULT NULL,
-  `taker_sell_volume` double DEFAULT NULL,
-  `taker_buy_ratio` double DEFAULT NULL
+  `timestamp` datetime NOT NULL,
+  `open_interest` decimal(20,8) DEFAULT NULL,
+  `funding_rate` decimal(10,8) DEFAULT NULL,
+  `funding_interval` varchar(10) DEFAULT NULL,
+  `basis` decimal(20,8) DEFAULT NULL,
+  `basis_pct` decimal(10,8) DEFAULT NULL,
+  `cvd_1h` decimal(20,8) DEFAULT NULL,
+  `cvd_4h` decimal(20,8) DEFAULT NULL,
+  `extra_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`extra_json`)),
+  `taker_buy_volume` decimal(28,12) DEFAULT NULL,
+  `taker_sell_volume` decimal(28,12) DEFAULT NULL,
+  `taker_buy_ratio` decimal(20,10) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- --------------------------------------------------------
@@ -134,14 +141,15 @@ CREATE TABLE `derivatives` (
 
 CREATE TABLE `equity_curve` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
+  `timestamp` datetime NOT NULL,
+  `symbol` varchar(20) NOT NULL DEFAULT 'BTCUSDT',
   `equity_usdt` decimal(20,8) NOT NULL,
-  `balance_usdt` decimal(20,8) NOT NULL,
-  `open_pnl_usdt` decimal(20,8) NOT NULL,
-  `closed_pnl_usdt` decimal(20,8) NOT NULL,
-  `daily_dd_pct` decimal(10,4) NOT NULL,
-  `weekly_dd_pct` decimal(10,4) NOT NULL,
-  `risk_mode` enum('risk_off','cautious','neutral','aggressive') NOT NULL
+  `balance_usdt` decimal(20,8) DEFAULT NULL,
+  `unrealized_pnl` decimal(20,8) DEFAULT NULL,
+  `realized_pnl` decimal(20,8) DEFAULT NULL,
+  `daily_pnl` decimal(20,8) DEFAULT NULL,
+  `weekly_pnl` decimal(20,8) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -187,16 +195,17 @@ CREATE TABLE `executions` (
 CREATE TABLE `flows` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `symbol` varchar(20) NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
-  `current_price` decimal(20,8) NOT NULL,
-  `etp_net_flow_usd` decimal(20,2) DEFAULT NULL,
-  `crowd_bias_score` decimal(10,4) DEFAULT NULL,
-  `trap_index_score` decimal(10,4) DEFAULT NULL,
-  `risk_global_score` decimal(10,4) DEFAULT NULL,
-  `warnings_json` longtext DEFAULT NULL,
-  `liquidation_json` longtext DEFAULT NULL,
-  `etp_summary_json` longtext DEFAULT NULL,
-  `payload_json` longtext NOT NULL
+  `timestamp` datetime NOT NULL,
+  `derivatives_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`derivatives_json`)),
+  `etp_summary_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`etp_summary_json`)),
+  `liquidation_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`liquidation_json`)),
+  `crowd_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`crowd_json`)),
+  `trap_index_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`trap_index_json`)),
+  `news_sentiment_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`news_sentiment_json`)),
+  `warnings_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`warnings_json`)),
+  `risk_global_score` decimal(10,8) DEFAULT NULL,
+  `risk_mode` varchar(32) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -215,6 +224,26 @@ CREATE TABLE `liquidation_zones` (
   `price_level` decimal(20,8) NOT NULL,
   `strength_score` int(11) NOT NULL,
   `size_btc` decimal(20,8) DEFAULT NULL,
+  `comment` varchar(255) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Структура таблицы `liquidation_zones_history`
+--
+
+CREATE TABLE `liquidation_zones_history` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `symbol` varchar(20) NOT NULL,
+  `as_of` datetime NOT NULL,
+  `current_price` decimal(20,8) NOT NULL,
+  `side` enum('long','short') NOT NULL,
+  `position_rel` enum('above','below') NOT NULL,
+  `center_price` decimal(20,8) NOT NULL,
+  `zone_min` decimal(20,8) NOT NULL,
+  `zone_max` decimal(20,8) NOT NULL,
+  `strength` decimal(10,8) NOT NULL,
   `comment` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -395,14 +424,17 @@ CREATE TABLE `risk_events` (
 CREATE TABLE `snapshots` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `symbol` varchar(20) NOT NULL,
-  `captured_at_utc` datetime NOT NULL,
+  `timestamp` datetime NOT NULL,
   `price` decimal(20,8) NOT NULL,
-  `timeframe` varchar(16) NOT NULL,
-  `structure_tag` varchar(32) DEFAULT NULL,
-  `momentum_tag` varchar(32) DEFAULT NULL,
-  `atr_5m` decimal(20,8) DEFAULT NULL,
-  `session` varchar(16) DEFAULT NULL,
-  `payload_json` longtext NOT NULL
+  `o_5m` decimal(20,8) DEFAULT NULL,
+  `h_5m` decimal(20,8) DEFAULT NULL,
+  `l_5m` decimal(20,8) DEFAULT NULL,
+  `c_5m` decimal(20,8) DEFAULT NULL,
+  `candles_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`candles_json`)),
+  `market_structure_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`market_structure_json`)),
+  `momentum_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`momentum_json`)),
+  `session_json` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`session_json`)),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -448,34 +480,37 @@ ALTER TABLE `bot_state`
 --
 ALTER TABLE `candles`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `symbol` (`symbol`,`timeframe`,`open_time`);
+  ADD UNIQUE KEY `uq_candles_symbol_tf_open` (`symbol`,`timeframe`,`open_time`),
+  ADD KEY `idx_candles_symbol_time` (`symbol`,`open_time`);
 
 --
 -- Индексы таблицы `decisions`
 --
 ALTER TABLE `decisions`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `symbol` (`symbol`,`timestamp_ms`),
+  ADD UNIQUE KEY `uq_decisions_symbol_ts` (`symbol`,`timestamp`),
   ADD KEY `idx_decisions_symbol_time` (`symbol`,`created_at_utc`),
   ADD KEY `idx_decisions_action` (`symbol`,`action`,`created_at_utc`),
   ADD KEY `idx_decisions_risk_mode` (`risk_mode`,`created_at_utc`),
   ADD KEY `idx_decisions_snapshot` (`snapshot_ref_id`),
-  ADD KEY `idx_decisions_flow` (`flow_ref_id`);
+  ADD KEY `idx_decisions_flow` (`flow_ref_id`),
+  ADD KEY `idx_decisions_ts` (`timestamp`);
 
 --
 -- Индексы таблицы `derivatives`
 --
 ALTER TABLE `derivatives`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `symbol_ts` (`symbol`,`timestamp_ms`);
+  ADD UNIQUE KEY `uq_derivatives_symbol_ts` (`symbol`,`timestamp`),
+  ADD KEY `idx_derivatives_symbol_ts` (`symbol`,`timestamp`);
 
 --
 -- Индексы таблицы `equity_curve`
 --
 ALTER TABLE `equity_curve`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_equity_time` (`captured_at_utc`),
-  ADD KEY `idx_equity_mode` (`risk_mode`,`captured_at_utc`);
+  ADD UNIQUE KEY `uq_equity_ts` (`timestamp`),
+  ADD KEY `idx_equity_timestamp` (`timestamp`);
 
 --
 -- Индексы таблицы `etp_flows`
@@ -496,8 +531,10 @@ ALTER TABLE `executions`
 --
 ALTER TABLE `flows`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_flows_symbol_time` (`symbol`,`captured_at_utc`),
-  ADD KEY `idx_flows_price` (`symbol`,`current_price`);
+  ADD UNIQUE KEY `uq_flows_symbol_ts` (`symbol`,`timestamp`),
+  ADD KEY `idx_flows_symbol_time` (`symbol`),
+  ADD KEY `idx_flows_price` (`symbol`),
+  ADD KEY `idx_flows_ts` (`timestamp`);
 
 --
 -- Индексы таблицы `liquidation_zones`
@@ -509,13 +546,23 @@ ALTER TABLE `liquidation_zones`
   ADD KEY `idx_liq_cluster` (`cluster_id`);
 
 --
+-- Индексы таблицы `liquidation_zones_history`
+--
+ALTER TABLE `liquidation_zones_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_liq_symbol_asof` (`symbol`,`as_of`),
+  ADD KEY `idx_liq_symbol_side` (`symbol`,`side`,`as_of`);
+
+--
 -- Индексы таблицы `logs`
 --
 ALTER TABLE `logs`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_logs_time` (`created_at_utc`),
   ADD KEY `idx_logs_module` (`module`,`created_at_utc`),
-  ADD KEY `idx_logs_level` (`level`,`created_at_utc`);
+  ADD KEY `idx_logs_level` (`level`,`created_at_utc`),
+  ADD KEY `idx_logs_ts` (`timestamp`),
+  ADD KEY `idx_logs_source` (`source`);
 
 --
 -- Индексы таблицы `market_flow`
@@ -582,7 +629,9 @@ ALTER TABLE `risk_events`
 --
 ALTER TABLE `snapshots`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_snapshots_symbol_time` (`symbol`,`captured_at_utc`);
+  ADD UNIQUE KEY `uq_snapshots_symbol_ts` (`symbol`,`timestamp`),
+  ADD KEY `idx_snapshots_symbol_time` (`symbol`),
+  ADD KEY `idx_snapshots_ts` (`timestamp`);
 
 --
 -- Индексы таблицы `trades`
@@ -602,19 +651,19 @@ ALTER TABLE `trades`
 -- AUTO_INCREMENT для таблицы `candles`
 --
 ALTER TABLE `candles`
-  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT для таблицы `decisions`
 --
 ALTER TABLE `decisions`
-  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT для таблицы `derivatives`
 --
 ALTER TABLE `derivatives`
-  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT для таблицы `equity_curve`
@@ -644,6 +693,12 @@ ALTER TABLE `flows`
 -- AUTO_INCREMENT для таблицы `liquidation_zones`
 --
 ALTER TABLE `liquidation_zones`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT для таблицы `liquidation_zones_history`
+--
+ALTER TABLE `liquidation_zones_history`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
