@@ -37,6 +37,7 @@ MAX_LIQ_HISTORY = 365
 logger = logging.getLogger(__name__)
 _market_flow_checked = False
 _market_flow_exists = False
+_flow_columns: Optional[List[str]] = None
 
 
 def setup_logging() -> None:
@@ -250,49 +251,85 @@ def compute_flow_score(payload: Dict[str, Any]) -> Optional[float]:
 
 
 def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
-    sql = """
-        INSERT INTO flows (
-            symbol,
-            timestamp,
-            current_price,
-            etp_net_flow_usd,
-            crowd_bias_score,
-            trap_index_score,
-            risk_global_score,
-            warnings_json,
-            liquidation_json,
-            etp_summary_json,
-            payload_json
+    global _flow_columns
+
+    if _flow_columns is None:
+        with conn.cursor() as cur:
+            cur.execute("SHOW COLUMNS FROM flows")
+            _flow_columns = [row[0] for row in cur.fetchall()] if cur.rowcount else []
+
+    columns_available = set(_flow_columns or [])
+
+    # Prefer richer schema when available, but gracefully degrade for legacy tables
+    preferred_order = [
+        "symbol",
+        "captured_at_utc",
+        "timestamp",
+        "created_at",
+        "current_price",
+        "etp_net_flow_usd",
+        "crowd_bias_score",
+        "trap_index_score",
+        "risk_global_score",
+        "warnings_json",
+        "liquidation_json",
+        "etp_summary_json",
+        "payload_json",
+        "payload",
+        "window_minutes",
+    ]
+
+    values_map = {
+        "symbol": SYMBOL_DB,
+        "captured_at_utc": ts,
+        "timestamp": ts,
+        "created_at": ts,
+        "current_price": payload.get("price"),
+        "etp_net_flow_usd": payload.get("etp_summary", {}).get("net"),
+        "crowd_bias_score": payload.get("flow_score"),
+        "trap_index_score": payload.get("trap_index_score"),
+        "risk_global_score": payload.get("flow_score"),
+        "warnings_json": json.dumps(payload.get("warnings"), ensure_ascii=False)
+        if payload.get("warnings")
+        else None,
+        "liquidation_json": json.dumps(payload.get("liquidation"), ensure_ascii=False)
+        if payload.get("liquidation")
+        else None,
+        "etp_summary_json": json.dumps(payload.get("etp_summary"), ensure_ascii=False)
+        if payload.get("etp_summary")
+        else None,
+        "payload_json": json.dumps(payload, ensure_ascii=False),
+        "payload": json.dumps(payload, ensure_ascii=False),
+        "window_minutes": None,
+    }
+
+    insert_cols = [col for col in preferred_order if col in columns_available]
+
+    if not insert_cols:
+        raise RuntimeError("generate_btc_flow: flows table has no compatible columns")
+
+    placeholders = ",".join(["%s"] * len(insert_cols))
+    sql = f"INSERT INTO flows ({','.join(insert_cols)}) VALUES ({placeholders})"
+
+    updatable_cols = [
+        c
+        for c in insert_cols
+        if c
+        not in (
+            "id",
+            "symbol",
+            "timestamp",
+            "captured_at_utc",
+            "created_at",
         )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        ON DUPLICATE KEY UPDATE
-            current_price=VALUES(current_price),
-            etp_net_flow_usd=VALUES(etp_net_flow_usd),
-            crowd_bias_score=VALUES(crowd_bias_score),
-            trap_index_score=VALUES(trap_index_score),
-            risk_global_score=VALUES(risk_global_score),
-            warnings_json=VALUES(warnings_json),
-            liquidation_json=VALUES(liquidation_json),
-            etp_summary_json=VALUES(etp_summary_json),
-            payload_json=VALUES(payload_json)
-    """
+    ]
+    if updatable_cols:
+        sql += " ON DUPLICATE KEY UPDATE " + ",".join(
+            [f"{c}=VALUES({c})" for c in updatable_cols]
+        )
+
     with conn.cursor() as cur:
-        cur.execute(
-            sql,
-            (
-                SYMBOL_DB,
-                ts,
-                payload.get("price"),
-                payload.get("etp_summary", {}).get("net"),
-                payload.get("flow_score"),
-                payload.get("trap_index_score"),
-                payload.get("flow_score"),
-                json.dumps(payload.get("warnings"), ensure_ascii=False) if payload.get("warnings") else None,
-                json.dumps(payload.get("liquidation"), ensure_ascii=False) if payload.get("liquidation") else None,
-                json.dumps(payload.get("etp_summary"), ensure_ascii=False) if payload.get("etp_summary") else None,
-                json.dumps(payload, ensure_ascii=False),
-            ),
-        )
+        cur.execute(sql, [values_map.get(col) for col in insert_cols])
         conn.commit()
         return cur.lastrowid if cur.lastrowid else 0
 
@@ -368,34 +405,6 @@ def upsert_market_flow(conn, flow: Dict[str, Any], ts: datetime) -> None:
             json_data=%s,
             current_price=%s
         WHERE id=%s
-    """
-
-def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
-    sql = """
-        INSERT INTO flows (
-            symbol,
-            timestamp,
-            current_price,
-            etp_net_flow_usd,
-            crowd_bias_score,
-            trap_index_score,
-            risk_global_score,
-            warnings_json,
-            liquidation_json,
-            etp_summary_json,
-            payload_json
-        )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        ON DUPLICATE KEY UPDATE
-            current_price=VALUES(current_price),
-            etp_net_flow_usd=VALUES(etp_net_flow_usd),
-            crowd_bias_score=VALUES(crowd_bias_score),
-            trap_index_score=VALUES(trap_index_score),
-            risk_global_score=VALUES(risk_global_score),
-            warnings_json=VALUES(warnings_json),
-            liquidation_json=VALUES(liquidation_json),
-            etp_summary_json=VALUES(etp_summary_json),
-            payload_json=VALUES(payload_json)
     """
     with conn.cursor() as cur:
         cur.execute(select_sql, (symbol, timestamp_ms))
