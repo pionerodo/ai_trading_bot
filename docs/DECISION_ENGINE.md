@@ -198,6 +198,35 @@ Each 5-minute cycle, Decision Engine performs the following steps:
 
 ---
 
+## 3.1 Decision Engine ↔ API sequence
+
+End-to-end sequence for one 5-minute cycle and the surrounding API calls:
+
+1. **Dashboard / API ingest** (optional this minute)
+   - User posts manual inputs:
+     - `POST /api/input/etf` → stores validated `btc_etp_flow.json`.
+     - `POST /api/input/liquidations` → stores validated `btc_liquidation_map.json`.
+     - `POST /api/input/sentiment` → stores `news_sentiment.json`.
+   - Config updates (risk/engine) via `PATCH /api/config/risk` and `PATCH /api/config/engine` are persisted for the next loop.
+2. **Analytics loop**
+   - Pulls raw market data + latest manual JSONs.
+   - Builds **`btc_snapshot.json`** and writes to DB `snapshots`.
+   - Builds **`btc_flow.json`** and writes to DB `flows` (same timestamp as snapshot).
+3. **Decision Engine**
+   - Reads the freshly written snapshot and flow (matching `timestamp_iso`).
+   - Loads account state + risk config from DB/config files.
+   - Produces **`decision.json`** and inserts a row into `decisions` with `snapshot_id`/`flow_id` links.
+4. **API exposure**
+   - `GET /api/status` and `GET /api/decision` return the latest `decision.json` along with metadata (timestamp, risk mode).
+   - `GET /api/flow` and `GET /api/snapshot` surface the paired inputs for traceability.
+5. **Execution Engine consumption**
+   - Polls or subscribes to the refreshed `decision.json`.
+   - If decision is fresh and passes local safety checks → manages orders accordingly.
+
+This sequence guarantees that API consumers, dashboards and execution always observe **consistent triplets** (snapshot, flow, decision) per cycle.
+
+---
+
 ## 4. Long / Short / Flat Logic – High-Level Rules
 
 ### 4.1 Long Candidate
