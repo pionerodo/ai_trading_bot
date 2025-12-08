@@ -3,321 +3,6 @@
     "symbol": "BTC",
     "source": "coinglass_hyperliquid_liq_map",
     "captured_at_iso": "",
-    "captured_at_ms": 1765040101211,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
-    "captured_at_ms": 1765040401387,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
-    "captured_at_ms": 1765040701408,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
-    "captured_at_ms": 1765041001549,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
-    "captured_at_ms": 1765041301722,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
-    "captured_at_ms": 1765041601831,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
-    "captured_at_ms": 1765041901955,
-    "current_price": 84714,
-    "zones": [
-      {
-        "side": "short",
-        "price": 96800,
-        "strength": 10,
-        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
-      },
-      {
-        "side": "short",
-        "price": 91700,
-        "strength": 8,
-        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
-      },
-      {
-        "side": "long",
-        "price": 82600,
-        "strength": 6,
-        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
-      },
-      {
-        "side": "long",
-        "price": 79500,
-        "strength": 7,
-        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
-      },
-      {
-        "side": "long",
-        "price": 73700,
-        "strength": 4,
-        "comment": "Глубокий уровень поддержки на случай сильного пролива."
-      }
-    ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
-  },
-  {
-    "symbol": "BTC",
-    "source": "coinglass_hyperliquid_liq_map",
-    "captured_at_iso": "",
     "captured_at_ms": 1765042201952,
     "current_price": 84714,
     "zones": [
@@ -16384,6 +16069,321 @@
     "source": "coinglass_hyperliquid_liq_map",
     "captured_at_iso": "",
     "captured_at_ms": 1765149301275,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765149601431,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765149901505,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765150201642,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765150501627,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765150801777,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765151101943,
+    "current_price": 84714,
+    "zones": [
+      {
+        "side": "short",
+        "price": 96800,
+        "strength": 10,
+        "comment": "Абсолютная доминанта карты (более 2.6K BTC), главный магнит для цены."
+      },
+      {
+        "side": "short",
+        "price": 91700,
+        "strength": 8,
+        "comment": "Крупный кластер сопротивления (~730 BTC) на пути восстановления."
+      },
+      {
+        "side": "long",
+        "price": 82600,
+        "strength": 6,
+        "comment": "Ближайшая локальная поддержка, скопление стопов лонгов."
+      },
+      {
+        "side": "long",
+        "price": 79500,
+        "strength": 7,
+        "comment": "Значительная зона интереса покупателей и ликвидаций (~1K BTC)."
+      },
+      {
+        "side": "long",
+        "price": 73700,
+        "strength": 4,
+        "comment": "Глубокий уровень поддержки на случай сильного пролива."
+      }
+    ],
+    "summary": {
+      "dominant_side": "shorts",
+      "upside_focus_zone": "91500-97000",
+      "downside_focus_zone": "79000-83000",
+      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
+    }
+  },
+  {
+    "symbol": "BTC",
+    "source": "coinglass_hyperliquid_liq_map",
+    "captured_at_iso": "",
+    "captured_at_ms": 1765155777947,
     "current_price": 84714,
     "zones": [
       {

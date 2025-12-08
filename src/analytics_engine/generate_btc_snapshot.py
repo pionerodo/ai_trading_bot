@@ -279,6 +279,8 @@ def save_snapshot_to_file(snapshot: Dict[str, Any]) -> None:
     os.replace(tmp_path, SNAPSHOT_PATH)
 
 
+# --- main ---
+
 def main() -> None:
     setup_logging()
     logger.info("generate_btc_snapshot: started")
