@@ -123,9 +123,14 @@ ai_trading_bot/
 └── static/
 ```
 
+## 4. Smoke tests & seed data
+
+- Заполнить таблицы `snapshots`, `flows`, `decisions`: `python scripts/seed_snapshots_flows_decisions.py --database-url sqlite:///db/ai_trading_bot_dev.sqlite`
+- Запустить смоук-тест цепочки snapshot → flow → decision → fetch: `pytest tests/smoke/test_snapshot_flow_decision.py`
+
 ---
 
-## 4. JSON Data Pipeline
+## 5. JSON Data Pipeline
 
 ### 4.1 `btc_snapshot.json`
 Генерируется каждые 5 минут.  
@@ -257,7 +262,36 @@ python src/execution_engine/execution_loop.py
 
 ---
 
-## 10. Roadmap
+## 10. Development
+
+### Environment
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### Linting
+
+```bash
+ruff check src scripts
+flake8 src scripts
+```
+
+### Type Checking
+
+```bash
+mypy src scripts
+```
+
+### Tests
+
+```bash
+pytest
+```
+
+---
+
+## 11. Roadmap
 
 ### v1.0
 ✔ analytics  
@@ -278,9 +312,9 @@ python src/execution_engine/execution_loop.py
 
 ---
 
-## 11. License
+## 12. License
 Private project — all rights reserved.
 
-## 12. Maintainer
-**pionerodo**  
+## 13. Maintainer
+**pionerodo**
 GitHub: https://github.com/pionerodo
