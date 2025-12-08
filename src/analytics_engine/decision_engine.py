@@ -249,8 +249,8 @@ def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp
     snapshot_id = None
     flow_id = None
 
-    sql_snapshot = "SELECT id FROM snapshots WHERE symbol=%s AND timestamp=%s LIMIT 1"
-    sql_flow = "SELECT id FROM flows WHERE symbol=%s AND timestamp=%s LIMIT 1"
+    sql_snapshot = "SELECT id FROM snapshots WHERE symbol=%s AND captured_at_utc=%s LIMIT 1"
+    sql_flow = "SELECT id FROM flows WHERE symbol=%s AND captured_at_utc=%s LIMIT 1"
 
     with conn.cursor() as cur:
         cur.execute(sql_snapshot, ("BTCUSDT", snapshot_timestamp))
@@ -385,8 +385,8 @@ def main() -> None:
         logger.error("decision_engine: missing snapshot or flow; aborting run")
         return
 
-    snapshot_ts = snapshot.get("timestamp")
-    flow_ts = flow.get("timestamp")
+    snapshot_ts = snapshot.get("captured_at_utc") or snapshot.get("timestamp")
+    flow_ts = flow.get("captured_at_utc") or flow.get("timestamp")
     if not snapshot_ts or not flow_ts:
         logger.error("decision_engine: missing timestamps; aborting run")
         return

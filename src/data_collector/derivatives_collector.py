@@ -1,15 +1,16 @@
 """
 Собираем derivatives-срез для BTCUSDT и пишем в таблицу `derivatives`.
-Колонки соответствуют DATABASE_SCHEMA.md: timestamp (DATETIME UTC),
-open_interest, funding_rate и дополнительный extra_json для вспомогательных
-метрик (taker stats и др.).
+Целевая схема (DATABASE_SCHEMA.md / актуальная MariaDB):
+- timestamp: DATETIME (UTC, naive)
+- open_interest, funding_rate, taker_buy_volume, taker_sell_volume, taker_buy_ratio,
+  basis, basis_pct, cvd_1h, cvd_4h, extra_json
 """
 
 import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 import urllib.parse
@@ -151,26 +152,32 @@ def insert_derivatives_snapshot(
     taker_sell_volume: Optional[float],
     taker_buy_ratio: Optional[float],
 ) -> None:
-    extra: Dict[str, Any] = {}
-    if any(v is not None for v in (taker_buy_volume, taker_sell_volume, taker_buy_ratio)):
-        extra["taker_stats"] = {
-            "buy_volume": taker_buy_volume,
-            "sell_volume": taker_sell_volume,
-            "buy_ratio": taker_buy_ratio,
-        }
-
     sql = """
         INSERT INTO derivatives (
             symbol,
             timestamp,
             open_interest,
             funding_rate,
+            taker_buy_volume,
+            taker_sell_volume,
+            taker_buy_ratio,
+            basis,
+            basis_pct,
+            cvd_1h,
+            cvd_4h,
             extra_json
         )
-        VALUES (%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE
             open_interest=VALUES(open_interest),
             funding_rate=VALUES(funding_rate),
+            taker_buy_volume=VALUES(taker_buy_volume),
+            taker_sell_volume=VALUES(taker_sell_volume),
+            taker_buy_ratio=VALUES(taker_buy_ratio),
+            basis=VALUES(basis),
+            basis_pct=VALUES(basis_pct),
+            cvd_1h=VALUES(cvd_1h),
+            cvd_4h=VALUES(cvd_4h),
             extra_json=VALUES(extra_json)
     """
     with conn.cursor() as cur:
@@ -181,7 +188,14 @@ def insert_derivatives_snapshot(
                 ts,
                 open_interest,
                 funding_rate,
-                json.dumps(extra, ensure_ascii=False) if extra else None,
+                taker_buy_volume,
+                taker_sell_volume,
+                taker_buy_ratio,
+                None,
+                None,
+                None,
+                None,
+                None,
             ),
         )
     conn.commit()
@@ -200,15 +214,14 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        now_utc = datetime.now(timezone.utc)
-        ts_aligned = now_utc.replace(second=0, microsecond=0)
+        now_utc = datetime.utcnow().replace(second=0, microsecond=0)
 
         last_ts = _latest_timestamp(conn, SYMBOL)
-        if last_ts is not None and ts_aligned <= last_ts:
+        if last_ts is not None and now_utc <= last_ts:
             logger.info(
                 "derivatives[%s]: already up to date (ts=%s, last_ts=%s)",
                 SYMBOL,
-                ts_aligned,
+                now_utc,
                 last_ts,
             )
             return
@@ -234,7 +247,7 @@ def main() -> None:
         insert_derivatives_snapshot(
             conn,
             SYMBOL,
-            ts_aligned,
+            now_utc,
             oi,
             funding,
             buy_vol,
@@ -245,7 +258,7 @@ def main() -> None:
         logger.info(
             "derivatives[%s]: inserted snapshot ts=%s (oi=%s, funding=%s, buy_vol=%s, sell_vol=%s, ratio=%s)",
             SYMBOL,
-            ts_aligned,
+            now_utc,
             oi,
             funding,
             buy_vol,
