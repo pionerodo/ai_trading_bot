@@ -41,6 +41,9 @@ logs/
 data/*.json
 data/**/*.json
 
+# Local overrides for config (contains secrets)
+config/config.local.yaml
+
 # Leave an example directory explicitly tracked
 !data/examples/
 !data/examples/*.json

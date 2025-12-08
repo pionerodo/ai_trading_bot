@@ -1,5 +1,4 @@
 from pathlib import Path
-from pathlib import Path
 from typing import Any, Dict
 
 import yaml
@@ -12,20 +11,46 @@ def get_base_dir() -> Path:
     return _BASE_DIR
 
 
+def _safe_load_yaml(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return data if isinstance(data, dict) else {}
+
+
+def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = dict(base)
+    for key, value in override.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def load_config() -> Dict[str, Any]:
     """
     Загружаем YAML-конфиг и добавляем дефолты для блока trading,
-    не ломая существующую структуру.
+    не ломая существующую структуру. Локальные секреты читаются из
+    config/config.local.yaml поверх шаблонного config.yaml.
     """
-    config_path = _BASE_DIR / "config" / "config.yaml"
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
 
-    with config_path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+    base_config_path = _BASE_DIR / "config" / "config.yaml"
+    local_config_path = _BASE_DIR / "config" / "config.local.yaml"
 
-    if not isinstance(data, dict):
-        data = {}
+    base_data = _safe_load_yaml(base_config_path)
+    local_data = _safe_load_yaml(local_config_path)
+    data = _merge_dicts(base_data, local_data)
+
+    if not data:
+        raise FileNotFoundError(
+            f"Config file not found: {base_config_path} (and no local override)"
+        )
 
     # Дефолтные настройки риска/торговли
     trading_defaults: Dict[str, Any] = {

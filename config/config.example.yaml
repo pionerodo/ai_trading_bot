@@ -4,14 +4,14 @@ app:
   symbol: "BTCUSDT"
 
 paths:
-  base_dir: "/www/wwwroot/ai-hedge.cryptobavaro.online/ai_trading_bot"
+  base_dir: "/path/to/ai_trading_bot"
   data_dir: "data"
   logs_dir: "logs"
 
 logging:
   level: "INFO"
   file: "logs/bot.log"
-  max_bytes: 10485760      # 10 MB
+  max_bytes: 10485760
   backup_count: 5
 
 database:
@@ -29,7 +29,7 @@ risk:
   max_leverage: 5
 
 analysis:
-  cycle_seconds: 300      # полный цикл анализа/решения
+  cycle_seconds: 300
   symbol: "BTCUSDT"
   timeframes: ["1m", "5m", "15m", "1h"]
 
@@ -38,20 +38,16 @@ execution:
   min_entry_confidence: 0.6
 
 binance:
-  enabled: false          # пока ВСЕГДА false — бот не имеет права лезть в Binance
-  testnet: true           # в будущем будем начинать с testnet
+  enabled: false
+  testnet: true
   api_key: "${BINANCE_API_KEY:-}"
   api_secret: "${BINANCE_API_SECRET:-}"
-
-  # базовые параметры торговли, только для будущей логики
   symbol: "BTCUSDT"
   base_asset: "BTC"
   quote_asset: "USDT"
-
-  # ограничения риска на уровне биржи (будем использовать позже)
   max_leverage: 3
-  max_position_usd: 500     # не более 500$ в одной позиции
-  max_daily_loss_pct: 5     # дневной лимит просадки, %
+  max_position_usd: 500
+  max_daily_loss_pct: 5
 
 notifier:
   telegram_token: "${TELEGRAM_BOT_TOKEN:-}"
