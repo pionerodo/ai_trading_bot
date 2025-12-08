@@ -35,6 +35,8 @@ SYMBOL_DB = "BTCUSDT"
 MAX_LIQ_HISTORY = 365
 
 logger = logging.getLogger(__name__)
+_market_flow_checked = False
+_market_flow_exists = False
 
 
 def setup_logging() -> None:
@@ -204,6 +206,16 @@ def build_news(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
+def build_etp_summary(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not data:
+        return None
+    try:
+        inflow = float(data.get("inflow", 0.0))
+        outflow = float(data.get("outflow", 0.0))
+        net = inflow - outflow
+        return {"inflow": inflow, "outflow": outflow, "net": net}
+    except Exception:
+        return None
 
 def compute_flow_score(payload: Dict[str, Any]) -> Optional[float]:
     parts: List[float] = []
@@ -358,6 +370,33 @@ def upsert_market_flow(conn, flow: Dict[str, Any], ts: datetime) -> None:
         WHERE id=%s
     """
 
+def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
+    sql = """
+        INSERT INTO flows (
+            symbol,
+            timestamp,
+            current_price,
+            etp_net_flow_usd,
+            crowd_bias_score,
+            trap_index_score,
+            risk_global_score,
+            warnings_json,
+            liquidation_json,
+            etp_summary_json,
+            payload_json
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE
+            current_price=VALUES(current_price),
+            etp_net_flow_usd=VALUES(etp_net_flow_usd),
+            crowd_bias_score=VALUES(crowd_bias_score),
+            trap_index_score=VALUES(trap_index_score),
+            risk_global_score=VALUES(risk_global_score),
+            warnings_json=VALUES(warnings_json),
+            liquidation_json=VALUES(liquidation_json),
+            etp_summary_json=VALUES(etp_summary_json),
+            payload_json=VALUES(payload_json)
+    """
     with conn.cursor() as cur:
         cur.execute(select_sql, (symbol, timestamp_ms))
         row = cur.fetchone()
