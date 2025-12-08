@@ -206,6 +206,16 @@ def build_news(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
+def build_etp_summary(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not data:
+        return None
+    try:
+        inflow = float(data.get("inflow", 0.0))
+        outflow = float(data.get("outflow", 0.0))
+        net = inflow - outflow
+        return {"inflow": inflow, "outflow": outflow, "net": net}
+    except Exception:
+        return None
 
 def compute_flow_score(payload: Dict[str, Any]) -> Optional[float]:
     parts: List[float] = []
@@ -287,6 +297,143 @@ def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
         return cur.lastrowid if cur.lastrowid else 0
 
 
+def _safe_float(val: Any) -> Optional[float]:
+    try:
+        return float(val)
+    except Exception:
+        return None
+
+
+def _safe_int(val: Any) -> Optional[int]:
+    try:
+        return int(val)
+    except Exception:
+        return None
+
+
+def upsert_market_flow(conn, flow: Dict[str, Any], ts: datetime) -> None:
+    timestamp_ms = flow.get("timestamp_ms")
+    if timestamp_ms is None:
+        try:
+            timestamp_ms = int(ts.timestamp() * 1000)
+        except Exception:
+            timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    symbol = flow.get("symbol") or SYMBOL_DB
+
+    price_block = flow.get("price")
+    current_price = None
+    if isinstance(price_block, dict):
+        for key in ("current", "last", "value"):
+            if price_block.get(key) is not None:
+                current_price = _safe_float(price_block.get(key))
+                break
+    else:
+        current_price = _safe_float(price_block)
+
+    crowd_sentiment = _safe_float(flow.get("flow_score"))
+    funding_rate = _safe_float(flow.get("funding_rate"))
+    open_interest_change = _safe_float(flow.get("open_interest_change"))
+
+    liquidation_block = flow.get("liquidation") if isinstance(flow.get("liquidation"), dict) else {}
+    liquidations_long = _safe_int(liquidation_block.get("liquidations_long")) if liquidation_block else None
+    liquidations_short = _safe_int(liquidation_block.get("liquidations_short")) if liquidation_block else None
+
+    risk_score = _safe_float(flow.get("risk_score") or flow.get("flow_score"))
+
+    select_sql = "SELECT id FROM market_flow WHERE symbol=%s AND timestamp_ms=%s"
+    insert_sql = """
+        INSERT INTO market_flow (
+            timestamp_ms,
+            symbol,
+            crowd_sentiment,
+            funding_rate,
+            open_interest_change,
+            liquidations_long,
+            liquidations_short,
+            risk_score,
+            json_data,
+            current_price
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """
+    update_sql = """
+        UPDATE market_flow
+        SET
+            crowd_sentiment=%s,
+            funding_rate=%s,
+            open_interest_change=%s,
+            liquidations_long=%s,
+            liquidations_short=%s,
+            risk_score=%s,
+            json_data=%s,
+            current_price=%s
+        WHERE id=%s
+    """
+
+def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
+    sql = """
+        INSERT INTO flows (
+            symbol,
+            timestamp,
+            current_price,
+            etp_net_flow_usd,
+            crowd_bias_score,
+            trap_index_score,
+            risk_global_score,
+            warnings_json,
+            liquidation_json,
+            etp_summary_json,
+            payload_json
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE
+            current_price=VALUES(current_price),
+            etp_net_flow_usd=VALUES(etp_net_flow_usd),
+            crowd_bias_score=VALUES(crowd_bias_score),
+            trap_index_score=VALUES(trap_index_score),
+            risk_global_score=VALUES(risk_global_score),
+            warnings_json=VALUES(warnings_json),
+            liquidation_json=VALUES(liquidation_json),
+            etp_summary_json=VALUES(etp_summary_json),
+            payload_json=VALUES(payload_json)
+    """
+    with conn.cursor() as cur:
+        cur.execute(select_sql, (symbol, timestamp_ms))
+        row = cur.fetchone()
+        if row:
+            cur.execute(
+                update_sql,
+                (
+                    crowd_sentiment,
+                    funding_rate,
+                    open_interest_change,
+                    liquidations_long,
+                    liquidations_short,
+                    risk_score,
+                    json.dumps(flow, ensure_ascii=False),
+                    current_price,
+                    row[0],
+                ),
+            )
+        else:
+            cur.execute(
+                insert_sql,
+                (
+                    timestamp_ms,
+                    symbol,
+                    crowd_sentiment,
+                    funding_rate,
+                    open_interest_change,
+                    liquidations_long,
+                    liquidations_short,
+                    risk_score,
+                    json.dumps(flow, ensure_ascii=False),
+                    current_price,
+                ),
+            )
+        conn.commit()
+
+
 def main() -> None:
     setup_logging()
     logger.info("generate_btc_flow: started")
@@ -353,9 +500,11 @@ def main() -> None:
     payload["warnings"] = warnings
 
     try:
+        payload["timestamp_ms"] = int(ts.timestamp() * 1000)
         db_id = insert_flow(conn, payload, ts)
         if db_id:
             payload["db_id"] = db_id
+        upsert_market_flow(conn, payload, ts)
         with open(FLOW_PATH + ".tmp", "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         os.replace(FLOW_PATH + ".tmp", FLOW_PATH)
