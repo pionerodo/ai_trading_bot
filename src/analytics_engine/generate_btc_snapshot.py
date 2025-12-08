@@ -66,9 +66,10 @@ def fetch_recent_candles(conn, symbol: str, timeframe: str, limit: int = 150) ->
 
     candles: List[Dict[str, Any]] = []
     for row in reversed(rows):
+        open_time = row[0]
         candles.append(
             {
-                "open_time": int(row[0]),
+                "open_time": int(open_time.timestamp() * 1000),
                 "open": float(row[1]),
                 "high": float(row[2]),
                 "low": float(row[3]),
@@ -264,6 +265,8 @@ def save_snapshot_to_file(snapshot: Dict[str, Any]) -> None:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
     os.replace(tmp_path, SNAPSHOT_PATH)
 
+
+# --- main ---
 
 def main() -> None:
     setup_logging()

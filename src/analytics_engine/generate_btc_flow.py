@@ -35,6 +35,8 @@ SYMBOL_DB = "BTCUSDT"
 MAX_LIQ_HISTORY = 365
 
 logger = logging.getLogger(__name__)
+_market_flow_checked = False
+_market_flow_exists = False
 
 
 def setup_logging() -> None:

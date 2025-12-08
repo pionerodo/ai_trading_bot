@@ -55,7 +55,7 @@ LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "candles_collector.log")
 def setup_logging() -> None:
     formatter = logging.Formatter(
         fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        datefmt="%%Y-%%m-%%d %%H:%%M:%%S",
     )
 
     logger_root = logging.getLogger()
@@ -139,6 +139,8 @@ def fetch_klines(
             "close": str(row[4]),
             "volume": str(row[5]),
             "close_time": int(row[6]),
+            "quote_volume": str(row[7]) if len(row) > 7 else None,
+            "trades_count": int(row[8]) if len(row) > 8 else None,
         }
         klines.append(k)
 
@@ -149,6 +151,7 @@ def get_latest_open_time(conn, symbol: str, timeframe: str) -> Optional[int]:
     """
     Возвращает MAX(open_time) для пары+таймфрейма в таблице `candles` (BIGINT ms).
     Если таблица пустая — возвращает None.
+    В БД время хранится как DATETIME UTC.
     """
     sql = """
         SELECT MAX(open_time) AS max_open_time
