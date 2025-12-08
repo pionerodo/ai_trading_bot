@@ -266,57 +266,99 @@ def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp
     return snapshot_id, flow_id
 
 
-def _insert_decision(conn, decision: Decision, snapshot_ts: datetime, flow_ts: datetime, timestamp_ms: int) -> None:
-    sql = """
-        INSERT INTO decisions (
-            symbol,
-            timestamp,
-            action,
-            confidence,
-            rationale,
-            price_ref,
-            stop_loss,
-            take_profit,
-            position_size,
-            snapshot_id,
-            flow_id,
-            timestamp_ms,
-            risk_flags
-        )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        ON DUPLICATE KEY UPDATE
-            action=VALUES(action),
-            confidence=VALUES(confidence),
-            rationale=VALUES(rationale),
-            price_ref=VALUES(price_ref),
-            stop_loss=VALUES(stop_loss),
-            take_profit=VALUES(take_profit),
-            position_size=VALUES(position_size),
-            snapshot_id=VALUES(snapshot_id),
-            flow_id=VALUES(flow_id),
-            timestamp_ms=VALUES(timestamp_ms),
-            risk_flags=VALUES(risk_flags)
-    """
+def _insert_decision(conn, decision: Decision, snapshot_ts: datetime) -> None:
+    columns = [
+        "symbol",
+        "timestamp",
+        "created_at",
+        "action",
+        "confidence",
+        "reason",
+        "entry_min_price",
+        "entry_max_price",
+        "sl_price",
+        "tp1_price",
+        "tp2_price",
+        "position_size_usdt",
+        "leverage",
+        "risk_level",
+        "risk_checks_json",
+        "snapshot_id",
+        "flow_id",
+    ]
 
-    with conn.cursor() as cur:
-        cur.execute(
-            sql,
-            (
-                "BTCUSDT",
-                snapshot_ts,
-                decision.action,
-                decision.confidence,
-                decision.rationale,
-                decision.price_ref,
-                decision.stop_loss,
-                decision.take_profit,
-                decision.position_size,
-                decision.snapshot_id,
-                decision.flow_id,
-                timestamp_ms,
-                json.dumps(decision.risk_flags, ensure_ascii=False),
-            ),
-        )
+    values = (
+        "BTCUSDT",
+        snapshot_ts,
+        datetime.now(timezone.utc),
+        decision.action,
+        decision.confidence,
+        decision.rationale,
+        decision.price_ref,
+        decision.price_ref,
+        decision.stop_loss,
+        decision.take_profit,
+        None,
+        decision.position_size,
+        0.0,
+        0,
+        json.dumps(decision.risk_flags, ensure_ascii=False),
+        decision.snapshot_id,
+        decision.flow_id,
+    )
+
+    is_sqlite = conn.__class__.__module__.startswith("sqlite3")
+    placeholder = ",".join(["?"] * len(columns)) if is_sqlite else ",".join(["%s"] * len(columns))
+
+    if is_sqlite:
+        sql = f"""
+            INSERT INTO decisions ({','.join(columns)})
+            VALUES ({placeholder})
+            ON CONFLICT(symbol, timestamp) DO UPDATE SET
+                action=excluded.action,
+                confidence=excluded.confidence,
+                reason=excluded.reason,
+                entry_min_price=excluded.entry_min_price,
+                entry_max_price=excluded.entry_max_price,
+                sl_price=excluded.sl_price,
+                tp1_price=excluded.tp1_price,
+                tp2_price=excluded.tp2_price,
+                position_size_usdt=excluded.position_size_usdt,
+                leverage=excluded.leverage,
+                risk_level=excluded.risk_level,
+                risk_checks_json=excluded.risk_checks_json,
+                snapshot_id=excluded.snapshot_id,
+                flow_id=excluded.flow_id
+        """
+    else:
+        sql = f"""
+            INSERT INTO decisions ({','.join(columns)})
+            VALUES ({placeholder})
+            ON DUPLICATE KEY UPDATE
+                action=VALUES(action),
+                confidence=VALUES(confidence),
+                reason=VALUES(reason),
+                entry_min_price=VALUES(entry_min_price),
+                entry_max_price=VALUES(entry_max_price),
+                sl_price=VALUES(sl_price),
+                tp1_price=VALUES(tp1_price),
+                tp2_price=VALUES(tp2_price),
+                position_size_usdt=VALUES(position_size_usdt),
+                leverage=VALUES(leverage),
+                risk_level=VALUES(risk_level),
+                risk_checks_json=VALUES(risk_checks_json),
+                snapshot_id=VALUES(snapshot_id),
+                flow_id=VALUES(flow_id)
+        """
+
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, values)
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
     conn.commit()
 
 
@@ -424,7 +466,7 @@ def main() -> None:
         decision.snapshot_id = snap_id
         decision.flow_id = flow_id
 
-        _insert_decision(conn, decision, snapshot_dt, flow_dt, payload["timestamp_ms"])
+        _insert_decision(conn, decision, snapshot_dt)
         logger.info(
             "decision_engine: saved decision action=%s confidence=%.3f snapshot_id=%s flow_id=%s",
             decision.action,
