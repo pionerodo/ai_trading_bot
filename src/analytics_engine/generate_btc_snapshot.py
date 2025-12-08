@@ -54,7 +54,16 @@ def setup_logging() -> None:
 
 def fetch_recent_candles(conn, symbol: str, timeframe: str, limit: int = 150) -> List[Dict[str, Any]]:
     sql = """
-        SELECT open_time, open, high, low, close, volume, close_time
+        SELECT
+            open_time,
+            close_time,
+            open_price  AS open,
+            high_price  AS high,
+            low_price   AS low,
+            close_price AS close,
+            volume,
+            quote_volume,
+            trades_count
         FROM candles
         WHERE symbol=%s AND timeframe=%s
         ORDER BY open_time DESC
@@ -66,16 +75,19 @@ def fetch_recent_candles(conn, symbol: str, timeframe: str, limit: int = 150) ->
 
     candles: List[Dict[str, Any]] = []
     for row in reversed(rows):
-        open_time = row[0]
+        open_dt = row[0]
+        close_dt = row[1]
         candles.append(
             {
-                "open_time": int(open_time.timestamp() * 1000),
-                "open": float(row[1]),
-                "high": float(row[2]),
-                "low": float(row[3]),
-                "close": float(row[4]),
-                "volume": float(row[5]),
-                "close_time": int(row[6]),
+                "open_time": open_dt.isoformat() if open_dt else None,
+                "close_time": close_dt.isoformat() if close_dt else None,
+                "open": float(row[2]) if row[2] is not None else None,
+                "high": float(row[3]) if row[3] is not None else None,
+                "low": float(row[4]) if row[4] is not None else None,
+                "close": float(row[5]) if row[5] is not None else None,
+                "volume": float(row[6]) if row[6] is not None else None,
+                "quote_volume": float(row[7]) if row[7] is not None else None,
+                "trades_count": int(row[8]) if row[8] is not None else None,
             }
         )
     return candles
@@ -83,10 +95,10 @@ def fetch_recent_candles(conn, symbol: str, timeframe: str, limit: int = 150) ->
 
 def fetch_last_derivatives(conn, symbol: str) -> Optional[Dict[str, Any]]:
     sql = """
-        SELECT timestamp_ms, open_interest, funding_rate, taker_buy_volume, taker_sell_volume, taker_buy_ratio
+        SELECT timestamp, open_interest, funding_rate, taker_buy_volume, taker_sell_volume, taker_buy_ratio
         FROM derivatives
         WHERE symbol=%s
-        ORDER BY timestamp_ms DESC
+        ORDER BY timestamp DESC
         LIMIT 1
     """
     with conn.cursor() as cur:
@@ -96,7 +108,7 @@ def fetch_last_derivatives(conn, symbol: str) -> Optional[Dict[str, Any]]:
             return None
 
     return {
-        "timestamp_ms": int(row[0]),
+        "timestamp": row[0].isoformat() if row[0] else None,
         "open_interest": float(row[1]) if row[1] is not None else None,
         "funding_rate": float(row[2]) if row[2] is not None else None,
         "taker_buy_volume": float(row[3]) if row[3] is not None else None,

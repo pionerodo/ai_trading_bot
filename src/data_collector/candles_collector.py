@@ -6,9 +6,9 @@ Candles Collector
 - пишет их в таблицу `candles` (MariaDB)
 - работает идемпотентно: каждый запуск дозаливает только недостающие свечи
 
-Схема БД (ai_trading_bot.sql):
-- open_time / close_time: BIGINT (ms since epoch)
-- open/high/low/close/volume: DECIMAL
+Схема БД (DATABASE_SCHEMA.md):
+- open_time / close_time: DATETIME (UTC, naive)
+- open_price/high_price/low_price/close_price, volume, quote_volume, trades_count
 """
 
 import json
@@ -149,9 +149,8 @@ def fetch_klines(
 
 def get_latest_open_time(conn, symbol: str, timeframe: str) -> Optional[int]:
     """
-    Возвращает MAX(open_time) для пары+таймфрейма в таблице `candles` (BIGINT ms).
-    Если таблица пустая — возвращает None.
-    В БД время хранится как DATETIME UTC.
+    Возвращает MAX(open_time) для пары+таймфрейма в таблице `candles` (DATETIME UTC, naive).
+    Если таблица пустая — возвращает None. Возвращаемое значение — millis.
     """
     sql = """
         SELECT MAX(open_time) AS max_open_time
@@ -164,7 +163,7 @@ def get_latest_open_time(conn, symbol: str, timeframe: str) -> Optional[int]:
         if not row or row[0] is None:
             return None
         try:
-            return int(row[0])
+            return int(row[0].timestamp() * 1000)
         except Exception:
             return None
 
@@ -175,7 +174,7 @@ def insert_candles(
     timeframe: str,
     candles: List[Dict[str, Any]],
 ) -> int:
-    """Вставляет пачку свечей в таблицу `candles` по схеме ai_trading_bot.sql."""
+    """Вставляет пачку свечей в таблицу `candles` по актуальной схеме."""
     if not candles:
         return 0
 
@@ -185,35 +184,43 @@ def insert_candles(
             timeframe,
             open_time,
             close_time,
-            open,
-            high,
-            low,
-            close,
-            volume
+            open_price,
+            high_price,
+            low_price,
+            close_price,
+            volume,
+            quote_volume,
+            trades_count
         )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE
             close_time=VALUES(close_time),
-            open=VALUES(open),
-            high=VALUES(high),
-            low=VALUES(low),
-            close=VALUES(close),
-            volume=VALUES(volume)
+            open_price=VALUES(open_price),
+            high_price=VALUES(high_price),
+            low_price=VALUES(low_price),
+            close_price=VALUES(close_price),
+            volume=VALUES(volume),
+            quote_volume=VALUES(quote_volume),
+            trades_count=VALUES(trades_count)
     """
 
     inserted = 0
     with conn.cursor() as cur:
         for c in candles:
+            open_dt = datetime.utcfromtimestamp(int(c["open_time"]) / 1000)
+            close_dt = datetime.utcfromtimestamp(int(c["close_time"]) / 1000)
             params = (
                 symbol,
                 timeframe,
-                int(c["open_time"]),
-                int(c["close_time"]),
+                open_dt,
+                close_dt,
                 c["open"],
                 c["high"],
                 c["low"],
                 c["close"],
                 c["volume"],
+                c.get("quote_volume"),
+                c.get("trades_count"),
             )
             cur.execute(sql, params)
             inserted += 1
