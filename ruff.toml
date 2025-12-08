@@ -1,0 +1,16 @@
+line-length = 100
+target-version = "py311"
+src = ["src", "scripts"]
+
+[lint]
+select = ["E", "F"]
+ignore = [
+    "E402",  # allow imports after sys.path tweaks
+    "E501",  # allow long legacy lines
+    "F401",  # allow unused imports in legacy modules
+    "F811",  # allow redefinitions in generated-style code
+    "F841",  # allow temporarily unused variables
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]

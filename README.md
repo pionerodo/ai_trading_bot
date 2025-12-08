@@ -262,7 +262,36 @@ python src/execution_engine/execution_loop.py
 
 ---
 
-## 10. Roadmap
+## 10. Development
+
+### Environment
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### Linting
+
+```bash
+ruff check src scripts
+flake8 src scripts
+```
+
+### Type Checking
+
+```bash
+mypy src scripts
+```
+
+### Tests
+
+```bash
+pytest
+```
+
+---
+
+## 11. Roadmap
 
 ### v1.0
 ✔ analytics  
@@ -283,9 +312,9 @@ python src/execution_engine/execution_loop.py
 
 ---
 
-## 11. License
+## 12. License
 Private project — all rights reserved.
 
-## 12. Maintainer
-**pionerodo**  
+## 13. Maintainer
+**pionerodo**
 GitHub: https://github.com/pionerodo

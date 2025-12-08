@@ -1,22 +1,13 @@
 {
   "symbol": "BTCUSDT",
-  "timestamp_iso": "2025-12-08T01:02:45.676415Z",
-  "timestamp_ms": 1765155765676,
-  "price": 90293.9,
-  "derivatives": {
-    "oi": {
-      "value": 87133.437,
-      "change_24h": null
-    },
-    "funding": {
-      "current": -9.69e-06,
-      "avg_24h": null
-    }
+  "timestamp": "2025-12-08T03:15:00",
+  "price": 91083.4,
+  "etp_summary": {
+    "inflow": 0.0,
+    "outflow": 0.0,
+    "net": 0.0
   },
-  "etp_summary": null,
-  "liquidation_zones": {
-    "source": "coinglass_hyperliquid_liq_map",
-    "current_price": 84714,
+  "liquidation": {
     "zones": [
       {
         "side": "short",
@@ -49,55 +40,13 @@
         "comment": "Глубокий уровень поддержки на случай сильного пролива."
       }
     ],
-    "summary": {
-      "dominant_side": "shorts",
-      "upside_focus_zone": "91500-97000",
-      "downside_focus_zone": "79000-83000",
-      "comment": "Текущая цена ~84.7k. Карта демонстрирует явный перевес шортов сверху. Массивные цели расположены на 91.7k и 96.8k (Short Squeeze potential). Поддержка снизу эшелонирована: ближайшая на 82.6k, более сильная на 79.5k."
-    }
+    "warnings": null,
+    "current_price": 84714
   },
-  "news_sentiment": null,
-  "crowd": {
-    "bias": "neutral",
-    "score": 0.5,
-    "description": "",
-    "fomo": 0.0,
-    "fud": 0.0
-  },
-  "trap_index": {
-    "score": 0.0,
-    "side": "none",
-    "comment": ""
-  },
-  "warnings": [
-    {
-      "type": "missing_news_sentiment",
-      "level": "info",
-      "message": "news_sentiment.json missing or invalid; news influence not applied"
-    }
-  ],
-  "risk": {
-    "global_score": 0.5,
-    "mode": "cautious_risk_on"
-  },
-  "liq_metrics": {
-    "summary_prev": {
-      "total_long": 17.0,
-      "total_short": 18.0,
-      "imbalance": 1.0
-    },
-    "summary_last": {
-      "total_long": 17.0,
-      "total_short": 18.0,
-      "imbalance": 1.0
-    },
-    "imbalance_prev": 1.0,
-    "imbalance_last": 1.0,
-    "imbalance_delta": 0.0,
-    "closest_short_distance": 6986.0,
-    "closest_long_distance": 2114.0,
-    "top_changed_zones": [],
-    "new_zones": [],
-    "disappeared_zones": []
-  }
+  "news": null,
+  "warnings": {},
+  "flow_score": 1e-06,
+  "trap_index_score": 0.0,
+  "timestamp_ms": 1765163700000,
+  "db_id": 3
 }
