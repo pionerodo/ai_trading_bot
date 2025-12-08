@@ -55,7 +55,7 @@ LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "candles_collector.log")
 def setup_logging() -> None:
     formatter = logging.Formatter(
         fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        datefmt="%%Y-%%m-%%d %%H:%%M:%%S",
     )
 
     logger_root = logging.getLogger()
