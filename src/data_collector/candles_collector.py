@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 """
-candles_collector.py
+Candles Collector
 
-Задача:
-- регулярно подтягивать новые свечи с Binance Futures (BTCUSDT)
-- писать их в таблицу `candles` (MariaDB)
-- работать идемпотентно: каждый запуск дозаливает только недостающие свечи
+- регулярно подтягивает новые свечи с Binance Futures (BTCUSDT)
+- пишет их в таблицу `candles` (MariaDB)
+- работает идемпотентно: каждый запуск дозаливает только недостающие свечи
 
-Предполагается:
-- таблица `candles` уже создана (см. ai_trading_bot_table_candles.sql)
-- поле `id` = AUTO_INCREMENT (если нет — сделай ALTER)
-- есть модуль db_utils.py с функцией get_db_connection(), которая возвращает pymysql / mysqlclient connection
+Схема БД (DATABASE_SCHEMA.md):
+- open_time / close_time: DATETIME (UTC, naive)
+- open_price/high_price/low_price/close_price, volume, quote_volume, trades_count
 """
 
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-import urllib.request
 import urllib.parse
+import urllib.request
 
-# Попытка импортировать get_db_connection из db_utils
-try:
-    from .db_utils import get_db_connection  # запуск как модуль: python -m src.data_collector.candles_collector
-except ImportError:
-    from db_utils import get_db_connection  # запуск напрямую: python src/data_collector/candles_collector.py
+# --- Ensure project root on sys.path for cron execution ---
+CURRENT_FILE = os.path.abspath(__file__)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_FILE)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
+from src.data_collector.db_utils import get_db_connection
 
 # === НАСТРОЙКИ COLLECTOR'А ===
 
@@ -47,7 +47,7 @@ BINANCE_MAX_LIMIT = 1000
 BINANCE_FUTURES_BASE_URL = "https://fapi.binance.com"
 
 # Путь к логам (если папка logs не существует — будет лог в stdout)
-LOG_FILE = "logs/candles_collector.log"
+LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "candles_collector.log")
 
 
 # === ЛОГИРОВАНИЕ ===
@@ -58,19 +58,18 @@ def setup_logging() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger_root = logging.getLogger()
+    logger_root.setLevel(logging.INFO)
 
-    # Попробуем писать в файл
     try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
         fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
         fh.setFormatter(formatter)
-        logger.addHandler(fh)
+        logger_root.addHandler(fh)
     except Exception:
-        # Если не получилось (нет папки logs и т.п.) — пишем в stdout
         sh = logging.StreamHandler(sys.stdout)
         sh.setFormatter(formatter)
-        logger.addHandler(sh)
+        logger_root.addHandler(sh)
 
 
 logger = logging.getLogger(__name__)
@@ -116,16 +115,7 @@ def fetch_klines(
     """
     Получает список свечей с Binance Futures.
 
-    Возвращает список словарей:
-    {
-        "open_time": int,
-        "open": str,
-        "high": str,
-        "low": str,
-        "close": str,
-        "volume": str,
-        "close_time": int
-    }
+    Возвращает список словарей с ключами, совместимыми со схемой `candles`.
     """
     params = {
         "symbol": symbol,
@@ -141,15 +131,6 @@ def fetch_klines(
 
     klines: List[Dict[str, Any]] = []
     for row in raw:
-        # Документация Binance Futures Klines:
-        # [0] Open time
-        # [1] Open
-        # [2] High
-        # [3] Low
-        # [4] Close
-        # [5] Volume
-        # [6] Close time
-        # ...
         k = {
             "open_time": int(row[0]),
             "open": str(row[1]),
@@ -158,20 +139,18 @@ def fetch_klines(
             "close": str(row[4]),
             "volume": str(row[5]),
             "close_time": int(row[6]),
+            "quote_volume": str(row[7]) if len(row) > 7 else None,
+            "trades_count": int(row[8]) if len(row) > 8 else None,
         }
         klines.append(k)
 
     return klines
 
 
-def get_latest_open_time(
-    conn,
-    symbol: str,
-    timeframe: str,
-) -> Optional[int]:
+def get_latest_open_time(conn, symbol: str, timeframe: str) -> Optional[int]:
     """
-    Возвращает MAX(open_time) для пары+таймфрейма в таблице `candles`.
-    Если таблица пустая — возвращает None.
+    Возвращает MAX(open_time) для пары+таймфрейма в таблице `candles` (DATETIME UTC, naive).
+    Если таблица пустая — возвращает None. Возвращаемое значение — millis.
     """
     sql = """
         SELECT MAX(open_time) AS max_open_time
@@ -183,7 +162,10 @@ def get_latest_open_time(
         row = cur.fetchone()
         if not row or row[0] is None:
             return None
-        return int(row[0])
+        try:
+            return int(row[0].timestamp() * 1000)
+        except Exception:
+            return None
 
 
 def insert_candles(
@@ -192,13 +174,7 @@ def insert_candles(
     timeframe: str,
     candles: List[Dict[str, Any]],
 ) -> int:
-    """
-    Вставляет пачку свечей в таблицу `candles`.
-
-    ВАЖНО:
-    - предполагаем, что поле `id` = AUTO_INCREMENT,
-      поэтому его не указываем в INSERT.
-    """
+    """Вставляет пачку свечей в таблицу `candles` по актуальной схеме."""
     if not candles:
         return 0
 
@@ -207,29 +183,44 @@ def insert_candles(
             symbol,
             timeframe,
             open_time,
-            `open`,
-            high,
-            low,
-            `close`,
+            close_time,
+            open_price,
+            high_price,
+            low_price,
+            close_price,
             volume,
-            close_time
+            quote_volume,
+            trades_count
         )
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE
+            close_time=VALUES(close_time),
+            open_price=VALUES(open_price),
+            high_price=VALUES(high_price),
+            low_price=VALUES(low_price),
+            close_price=VALUES(close_price),
+            volume=VALUES(volume),
+            quote_volume=VALUES(quote_volume),
+            trades_count=VALUES(trades_count)
     """
 
     inserted = 0
     with conn.cursor() as cur:
         for c in candles:
+            open_dt = datetime.utcfromtimestamp(int(c["open_time"]) / 1000)
+            close_dt = datetime.utcfromtimestamp(int(c["close_time"]) / 1000)
             params = (
                 symbol,
                 timeframe,
-                int(c["open_time"]),
+                open_dt,
+                close_dt,
                 c["open"],
                 c["high"],
                 c["low"],
                 c["close"],
                 c["volume"],
-                int(c["close_time"]),
+                c.get("quote_volume"),
+                c.get("trades_count"),
             )
             cur.execute(sql, params)
             inserted += 1
@@ -253,7 +244,6 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
     last_open_time = get_latest_open_time(conn, symbol, timeframe)
 
     if last_open_time is None:
-        # Таблица пустая → берём историю за LOOKBACK_MINUTES_IF_EMPTY
         start_time_ms = now_ms - LOOKBACK_MINUTES_IF_EMPTY * 60_000
         logger.info(
             "candles[%s, %s]: table empty, starting from %s",
@@ -262,7 +252,6 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
             datetime.fromtimestamp(start_time_ms / 1000, tz=timezone.utc).isoformat(),
         )
     else:
-        # Начинаем со следующей свечи
         start_time_ms = last_open_time + step_ms
         logger.info(
             "candles[%s, %s]: last open_time = %s, starting from next candle",
@@ -283,7 +272,6 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
     current_start = start_time_ms
 
     while current_start < now_ms:
-        # Чтобы не запрашивать слишком далеко вперёд
         batch_end = min(now_ms, current_start + step_ms * BINANCE_MAX_LIMIT)
 
         try:
@@ -302,7 +290,6 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
                 e,
                 exc_info=True,
             )
-            # Не падаем полностью, просто выходим из цикла по этому ТФ
             break
 
         if not klines:
@@ -315,7 +302,6 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
             )
             break
 
-        # Защита от редких дублей: если вдруг Binance вернул свечу с open_time <= last_known
         klines = [k for k in klines if k["open_time"] >= start_time_ms]
         if not klines:
             break
@@ -338,14 +324,11 @@ def collect_for_timeframe(conn, symbol: str, timeframe: str) -> None:
                 e,
                 exc_info=True,
             )
-            # Если тут ошибка — не продолжаем, т.к. можем получить дубль/несогласованность
             break
 
-        # Следующая партия начинается с конца последней свечи + 1 шаг
         last_batch_open = klines[-1]["open_time"]
         current_start = last_batch_open + step_ms
 
-        # Маленькая пауза, чтобы не спамить Binance
         time.sleep(0.1)
 
     logger.info(
