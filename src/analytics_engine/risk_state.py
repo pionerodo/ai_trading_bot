@@ -42,6 +42,13 @@ def _get_env_int(name: str, default: int) -> int:
         return default
 
 
+def _extract_trade_pnl(trade: Trade) -> Decimal:
+    for attr in ("pnl_usdt", "realized_pnl_usdt", "pnl"):
+        if hasattr(trade, attr):
+            return _as_decimal(getattr(trade, attr))
+    return Decimal("0")
+
+
 class RiskStateService:
     """Aggregates global risk state purely from DB data."""
 
@@ -126,7 +133,7 @@ class RiskStateService:
             return
         with self.db_session_factory() as session:  # type: Session
             base_equity = self._get_base_equity(session, trade.symbol)
-            pnl = _as_decimal(trade.pnl_usdt)
+            pnl = _extract_trade_pnl(trade)
             new_equity = base_equity + pnl
             day_start = datetime(trade.closed_at_utc.year, trade.closed_at_utc.month, trade.closed_at_utc.day)
             week_start = trade.closed_at_utc - timedelta(days=7)
@@ -170,7 +177,7 @@ class RiskStateService:
         )
         total = Decimal("0")
         for row in rows:
-            total += _as_decimal(row.pnl_usdt)
+            total += _extract_trade_pnl(row)
         return total
 
     def _count_trades_since(self, session: Session, symbol: str, since: datetime) -> int:

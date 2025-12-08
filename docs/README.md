@@ -270,7 +270,25 @@ JSON-файлы используются как последние снапшо�
 
 ---
 
-## 9. Deployment
+## 9. Dashboard / API доступность
+
+Дэшборд и API отдаются тем же приложением FastAPI (`src/main.py`). Если при обращении к `/dashboard` браузер показывает `502 Bad Gateway`, проверьте следующее:
+
+1. **Сервис запущен.**
+   - Локально: `uvicorn src.main:app --host 0.0.0.0 --port 8000`.
+   - Через systemd: убедитесь, что сервис активен (`systemctl status ai-hedge-api`).
+2. **Health-check.**
+   - Запрос `GET /health` должен вернуть `{ "status": "healthy" }`. Если нет, смотрите логи приложения.
+3. **Reverse proxy.**
+   - В Nginx/Envoy проверьте upstream на `127.0.0.1:8000` (или текущий порт Uvicorn). Ошибка 502 обычно означает, что backend не отвечает или порт не совпадает.
+4. **Статика.**
+   - Файл `static/dashboard.html` должен существовать; FastAPI отдаёт его напрямую из `Path(__file__).resolve().parents[1] / "static"`.
+
+После перезапуска backend и прокси повторите запрос к `/health`, затем `/dashboard`.
+
+---
+
+## 10. Deployment
 
 ### Dev:
 
@@ -286,9 +304,21 @@ python src/execution_engine/execution_loop.py
 - Supervisor/systemd
 - Nginx reverse proxy
 
+## 11. Runtime playbook (prod/dev)
+
+Набор минимальных entrypoint-скриптов, которые нужно обернуть в `systemd`/`cron`:
+
+- **Analytics loop (5m):** `python -m src.analytics_engine.generate_btc_snapshot` → пишет в `data/btc_snapshot.json` + таблицу `snapshots`.
+- **Flow aggregator (5m):** `python -m src.analytics_engine.generate_btc_flow` → читает snapshot/liq/etf/sentiment, пишет в `data/btc_flow.json` + `flows`.
+- **Decision engine (5m):** `python -m src.analytics_engine.decision_engine` → использует snapshot+flow, сохраняет `decision.json` и запись в `decisions`.
+- **Execution engine (5m или event-driven):** `python -m src.execution.executor` → берёт свежий decision и симулирует исполнение (Binance выключен по умолчанию).
+- **Dashboard/API:** `uvicorn src.main:app --host 0.0.0.0 --port 8000`.
+
+В dev-режиме достаточно выполнять первые три скрипта вручную и поднимать Uvicorn для интерактивных проверок.
+
 ---
 
-## 10. Roadmap
+## 12. Roadmap
 
 ### v1.0
 ✔ analytics  
@@ -309,9 +339,9 @@ python src/execution_engine/execution_loop.py
 
 ---
 
-## 11. License
+## 13. License
 Private project — all rights reserved.
 
-## 12. Maintainer
+## 14. Maintainer
 **pionerodo**  
 GitHub: https://github.com/pionerodo

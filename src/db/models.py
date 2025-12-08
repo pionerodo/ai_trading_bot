@@ -144,6 +144,27 @@ class Flow(Base):
 
 
 # ---------------------------------------------------------------------------
+#  NOTIFICATIONS (alerts routed to Telegram/email)
+# ---------------------------------------------------------------------------
+
+
+class Notification(Base):
+    """Store alerting events for auditing and dashboards."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    level: Mapped[str] = mapped_column(String(20), nullable=False, default="info")
+    channel: Mapped[str] = mapped_column(String(50), nullable=False, default="log")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    meta: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+
+# ---------------------------------------------------------------------------
 #  LIQUIDATION ZONES (Hyperliquid / Coinglass)
 # ---------------------------------------------------------------------------
 
