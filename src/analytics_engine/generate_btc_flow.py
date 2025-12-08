@@ -243,7 +243,7 @@ def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
     sql = """
         INSERT INTO flows (
             symbol,
-            captured_at_utc,
+            timestamp,
             current_price,
             etp_net_flow_usd,
             crowd_bias_score,
