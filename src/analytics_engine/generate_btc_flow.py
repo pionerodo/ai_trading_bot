@@ -341,8 +341,15 @@ def main() -> None:
         warnings["etf_warning"] = True
     if payload.get("liquidation", {}).get("warnings"):
         warnings["liquidation_warning"] = True
-    if payload.get("news", {}).get("sentiment") == "bearish":
+
+    news_block = payload.get("news")
+    news_sentiment = None
+    if news_block and isinstance(news_block, dict):
+        news_sentiment = news_block.get("sentiment")
+
+    if news_sentiment == "bearish":
         warnings["news_warning"] = True
+
     payload["warnings"] = warnings
 
     try:
