@@ -1,0 +1,65 @@
+{
+  "symbol": "BTCUSDT",
+  "timestamp": "2025-12-08T03:35:00",
+  "timestamp_ms": 1765164900000,
+  "price": 91238.3,
+  "timeframe": "5m",
+  "structure": {
+    "tag": "bearish",
+    "atr": 123.99285714
+  },
+  "momentum": {
+    "tag": "neutral",
+    "score": 0.07
+  },
+  "session": {
+    "current": "Asia"
+  },
+  "candles": {
+    "1m": {
+      "open_time": "2025-12-08T03:33:00",
+      "close_time": "2025-12-08T03:33:59",
+      "open": 91227.3,
+      "high": 91241.4,
+      "low": 91227.3,
+      "close": 91238.3,
+      "volume": 11.768
+    },
+    "5m": {
+      "open_time": "2025-12-08T03:30:00",
+      "close_time": "2025-12-08T03:34:59",
+      "open": 91212.1,
+      "high": 91212.2,
+      "low": 91212.1,
+      "close": 91212.1,
+      "volume": 0.014
+    },
+    "15m": {
+      "open_time": "2025-12-08T03:30:00",
+      "close_time": "2025-12-08T03:44:59",
+      "open": 91212.1,
+      "high": 91214.5,
+      "low": 91190.6,
+      "close": 91200.2,
+      "volume": 48.411
+    },
+    "1h": {
+      "open_time": "2025-12-08T03:00:00",
+      "close_time": "2025-12-08T03:59:59",
+      "open": 91327.0,
+      "high": 91337.9,
+      "low": 91327.0,
+      "close": 91337.8,
+      "volume": 2.823
+    }
+  },
+  "derivatives": {
+    "timestamp": "2025-12-08T03:34:00",
+    "open_interest": 87217.801,
+    "funding_rate": 1.194e-05,
+    "taker_buy_volume": 59.07,
+    "taker_sell_volume": 83.794,
+    "taker_buy_ratio": 0.7049
+  },
+  "db_id": 10
+}

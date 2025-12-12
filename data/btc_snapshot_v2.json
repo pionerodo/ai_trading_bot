@@ -1,0 +1,108 @@
+{
+  "symbol": "BTC",
+  "timestamp_iso": "2025-12-07T23:45:01.847525Z",
+  "timestamp_ms": 1765151101847,
+  "price": 89842.4,
+  "candles": {
+    "tf_1m": {
+      "o": 89842.3,
+      "h": 89842.4,
+      "l": 89842.3,
+      "c": 89842.4,
+      "v": 2.052
+    },
+    "tf_5m": {
+      "o": 89882.5,
+      "h": 89884.0,
+      "l": 89818.6,
+      "c": 89821.8,
+      "v": 46.724
+    },
+    "tf_15m": {
+      "o": 90009.0,
+      "h": 90009.1,
+      "l": 90009.0,
+      "c": 90009.1,
+      "v": 0.598
+    },
+    "tf_1h": {
+      "o": 89551.7,
+      "h": 89551.7,
+      "l": 89518.0,
+      "c": 89518.0,
+      "v": 50.889
+    }
+  },
+  "market_structure": {
+    "tf_1m": {
+      "value": "range"
+    },
+    "tf_5m": {
+      "value": "LL-LH"
+    },
+    "tf_15m": {
+      "value": "HH-HL"
+    },
+    "tf_1h": {
+      "value": "LL-LH"
+    }
+  },
+  "momentum": {
+    "tf_1m": {
+      "state": "impulse_down",
+      "score": 0.422
+    },
+    "tf_5m": {
+      "state": "impulse_up",
+      "score": 0.535
+    },
+    "tf_15m": {
+      "state": "fading",
+      "score": 0.525
+    },
+    "tf_1h": {
+      "state": "fading",
+      "score": 0.76
+    }
+  },
+  "session": {
+    "current": "US",
+    "time_utc": "23:45",
+    "volatility_regime": "normal"
+  },
+  "derivatives": {
+    "oi": {
+      "value": 87112.242,
+      "change_24h": null
+    },
+    "funding": {
+      "current": -1.026e-05,
+      "avg_24h": null
+    },
+    "taker": {
+      "buy_volume": 83.125,
+      "sell_volume": 163.216,
+      "buy_ratio": 0.5093
+    }
+  },
+  "volatility": {
+    "atr": {
+      "tf_1m": {
+        "atr": 55.06,
+        "atr_pct": 0.00061
+      },
+      "tf_5m": {
+        "atr": 188.96,
+        "atr_pct": 0.0021
+      },
+      "tf_15m": {
+        "atr": 297.39,
+        "atr_pct": 0.0033
+      },
+      "tf_1h": {
+        "atr": 526.74,
+        "atr_pct": 0.00588
+      }
+    }
+  }
+}

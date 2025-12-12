@@ -1,0 +1,44 @@
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
+%Y-%m-%d %H:%M:%S [INFO] __main__: {"event":"candles_collector_started","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"]}
+%Y-%m-%d %H:%M:%S [ERROR] __main__: {"event":"candles_db_connection_failed","symbol":"BTCUSDT","timeframes":["1m","5m","15m","1h"],"error":"(1045, \"Access denied for user 'ai_trader'@'localhost' (using password: YES)\")"}
