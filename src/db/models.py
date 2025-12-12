@@ -169,12 +169,26 @@ class Flow(Base):
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 
-    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
 
-    window_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
+    derivatives_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    etp_summary_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    liquidation_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    crowd_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    trap_index_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    news_sentiment_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    warnings_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+
+    risk_global_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 8))
+    risk_mode: Mapped[Optional[str]] = mapped_column(String(32))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "timestamp", name="uix_flows_symbol_ts"),
+        Index("idx_flows_timestamp", "timestamp"),
     )
 
 
@@ -457,19 +471,21 @@ class MarketFlow(Base):
 
     id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    timeframe: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
 
-    trend: Mapped[str] = mapped_column(
-        Enum("bullish", "bearish", "neutral", name="market_flow_trend"),
-        nullable=False,
-    )
-    strength: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    crowd_sentiment: Mapped[Optional[float]] = mapped_column(Float)
+    funding_rate: Mapped[Optional[float]] = mapped_column(Float)
+    open_interest_change: Mapped[Optional[float]] = mapped_column(Float)
+    liquidations_long: Mapped[Optional[float]] = mapped_column(Float)
+    liquidations_short: Mapped[Optional[float]] = mapped_column(Float)
+    risk_score: Mapped[Optional[float]] = mapped_column(Float)
+    json_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    current_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
 
-    meta: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, index=True
+    __table_args__ = (
+        UniqueConstraint("symbol", "timestamp_ms", name="uix_market_flow_symbol_ts"),
+        Index("idx_market_flow_symbol_ts", "symbol", "timestamp_ms"),
     )
 
 
@@ -558,11 +574,17 @@ class EquityCurve(Base):
     )
 
     equity_usdt: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
-    balance_usdt: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    balance_usdt: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
 
-    realized_pnl_usdt: Mapped[Decimal] = mapped_column(
+    realized_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 4), nullable=False, default=Decimal("0")
     )
-    unrealized_pnl_usdt: Mapped[Decimal] = mapped_column(
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, default=Decimal("0")
+    )
+    daily_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, default=Decimal("0")
+    )
+    weekly_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 4), nullable=False, default=Decimal("0")
     )

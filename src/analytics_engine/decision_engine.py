@@ -268,7 +268,9 @@ def _lookup_snapshot_flow_ids(conn, snapshot_timestamp: datetime, flow_timestamp
     sql_snapshot = (
         f"SELECT id FROM snapshots WHERE symbol={placeholder} AND captured_at_utc={placeholder} LIMIT 1"
     )
-    sql_flow = f"SELECT id FROM flows WHERE symbol={placeholder} AND captured_at_utc={placeholder} LIMIT 1"
+    sql_flow = (
+        f"SELECT id FROM flows WHERE symbol={placeholder} AND timestamp={placeholder} LIMIT 1"
+    )
 
     cur = conn.cursor()
     try:
@@ -455,7 +457,7 @@ def main() -> None:
         return
 
     snapshot_ts = snapshot.get("captured_at_utc") or snapshot.get("timestamp")
-    flow_ts = flow.get("captured_at_utc") or flow.get("timestamp")
+    flow_ts = flow.get("timestamp") or flow.get("captured_at_utc")
     if not snapshot_ts or not flow_ts:
         logger.error("decision_engine: missing timestamps; aborting run")
         return

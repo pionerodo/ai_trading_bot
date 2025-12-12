@@ -253,6 +253,9 @@ def compute_flow_score(payload: Dict[str, Any]) -> Optional[float]:
 def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
     global _flow_columns
 
+    def _dump_or_none(value: Any) -> Optional[str]:
+        return json.dumps(value, ensure_ascii=False) if value is not None else None
+
     if _flow_columns is None:
         with conn.cursor() as cur:
             cur.execute("SHOW COLUMNS FROM flows")
@@ -263,17 +266,23 @@ def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
     # Prefer richer schema when available, but gracefully degrade for legacy tables
     preferred_order = [
         "symbol",
-        "captured_at_utc",
         "timestamp",
         "created_at",
+        "derivatives_json",
+        "etp_summary_json",
+        "liquidation_json",
+        "crowd_json",
+        "trap_index_json",
+        "news_sentiment_json",
+        "warnings_json",
+        "risk_global_score",
+        "risk_mode",
+        # Legacy columns fallback
+        "captured_at_utc",
         "current_price",
         "etp_net_flow_usd",
         "crowd_bias_score",
         "trap_index_score",
-        "risk_global_score",
-        "warnings_json",
-        "liquidation_json",
-        "etp_summary_json",
         "payload_json",
         "payload",
         "window_minutes",
@@ -281,23 +290,22 @@ def insert_flow(conn, payload: Dict[str, Any], ts: datetime) -> int:
 
     values_map = {
         "symbol": SYMBOL_DB,
-        "captured_at_utc": ts,
         "timestamp": ts,
         "created_at": ts,
+        "derivatives_json": _dump_or_none(payload.get("derivatives")),
+        "etp_summary_json": _dump_or_none(payload.get("etp_summary")),
+        "liquidation_json": _dump_or_none(payload.get("liquidation")),
+        "crowd_json": _dump_or_none(payload.get("crowd")),
+        "trap_index_json": _dump_or_none(payload.get("trap_index")),
+        "news_sentiment_json": _dump_or_none(payload.get("news")),
+        "warnings_json": _dump_or_none(payload.get("warnings")),
+        "risk_global_score": payload.get("flow_score"),
+        "risk_mode": payload.get("risk_mode"),
+        "captured_at_utc": ts,
         "current_price": payload.get("price"),
         "etp_net_flow_usd": payload.get("etp_summary", {}).get("net"),
         "crowd_bias_score": payload.get("flow_score"),
         "trap_index_score": payload.get("trap_index_score"),
-        "risk_global_score": payload.get("flow_score"),
-        "warnings_json": json.dumps(payload.get("warnings"), ensure_ascii=False)
-        if payload.get("warnings")
-        else None,
-        "liquidation_json": json.dumps(payload.get("liquidation"), ensure_ascii=False)
-        if payload.get("liquidation")
-        else None,
-        "etp_summary_json": json.dumps(payload.get("etp_summary"), ensure_ascii=False)
-        if payload.get("etp_summary")
-        else None,
         "payload_json": json.dumps(payload, ensure_ascii=False),
         "payload": json.dumps(payload, ensure_ascii=False),
         "window_minutes": None,
@@ -486,11 +494,16 @@ def main() -> None:
     append_liq_history(payload.get("liquidation") or {}, LIQ_HISTORY_PATH)
     flow_score = compute_flow_score(payload)
     payload["flow_score"] = flow_score
+    payload["crowd"] = {"flow_score": flow_score}
 
     liq_history = load_json(LIQ_HISTORY_PATH)
     liq_context = analyze_liq_history(liq_history if isinstance(liq_history, list) else [])
     if liq_context:
         payload["trap_index_score"] = liq_context.get("imbalance_delta")
+        payload["trap_index"] = {
+            "score": payload.get("trap_index_score"),
+            **{k: v for k, v in (liq_context or {}).items()},
+        }
 
     warnings: Dict[str, Any] = {}
     if payload.get("etp_summary") and abs(payload["etp_summary"].get("net", 0)) > 2000:

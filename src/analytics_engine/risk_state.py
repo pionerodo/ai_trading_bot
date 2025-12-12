@@ -43,10 +43,19 @@ def _get_env_int(name: str, default: int) -> int:
 
 
 def _extract_trade_pnl(trade: Trade) -> Decimal:
-    for attr in ("pnl_usdt", "realized_pnl_usdt", "pnl"):
+    for attr in ("pnl_usdt", "realized_pnl_usdt", "realized_pnl", "pnl"):
         if hasattr(trade, attr):
             return _as_decimal(getattr(trade, attr))
     return Decimal("0")
+
+
+def _trade_closed_at(trade: Trade) -> datetime:
+    """Return the best available closing/execution timestamp for a trade."""
+
+    for attr in ("closed_at_utc", "executed_at"):
+        if hasattr(trade, attr) and getattr(trade, attr) is not None:
+            return getattr(trade, attr)
+    return datetime.utcnow()
 
 
 class RiskStateService:
@@ -135,13 +144,14 @@ class RiskStateService:
             base_equity = self._get_base_equity(session, trade.symbol)
             pnl = _extract_trade_pnl(trade)
             new_equity = base_equity + pnl
-            day_start = datetime(trade.closed_at_utc.year, trade.closed_at_utc.month, trade.closed_at_utc.day)
-            week_start = trade.closed_at_utc - timedelta(days=7)
+            trade_ts = _trade_closed_at(trade)
+            day_start = datetime(trade_ts.year, trade_ts.month, trade_ts.day)
+            week_start = trade_ts - timedelta(days=7)
             daily_pnl = self._sum_trades_since(session, trade.symbol, day_start)
             weekly_pnl = self._sum_trades_since(session, trade.symbol, week_start)
 
             row = EquityCurve(
-                timestamp=trade.closed_at_utc,
+                timestamp=trade_ts,
                 symbol=trade.symbol,
                 equity_usdt=new_equity,
                 realized_pnl=pnl,
@@ -172,7 +182,7 @@ class RiskStateService:
     def _sum_trades_since(self, session: Session, symbol: str, since: datetime) -> Decimal:
         rows = (
             session.query(Trade)
-            .filter(Trade.symbol == symbol, Trade.closed_at_utc >= since)
+            .filter(Trade.symbol == symbol, Trade.executed_at >= since)
             .all()
         )
         total = Decimal("0")
@@ -183,7 +193,7 @@ class RiskStateService:
     def _count_trades_since(self, session: Session, symbol: str, since: datetime) -> int:
         return (
             session.query(Trade)
-            .filter(Trade.symbol == symbol, Trade.closed_at_utc >= since)
+            .filter(Trade.symbol == symbol, Trade.executed_at >= since)
             .count()
         )
 
@@ -191,13 +201,13 @@ class RiskStateService:
         rows = (
             session.query(Trade)
             .filter(Trade.symbol == symbol)
-            .order_by(Trade.closed_at_utc.desc())
+            .order_by(Trade.executed_at.desc())
             .limit(50)
             .all()
         )
         streak = 0
         for row in rows:
-            pnl = _as_decimal(row.pnl_usdt)
+            pnl = _extract_trade_pnl(row)
             if pnl < 0:
                 streak += 1
             else:
