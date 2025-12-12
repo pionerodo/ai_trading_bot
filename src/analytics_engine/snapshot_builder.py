@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -62,12 +64,45 @@ def _load_latest_db_snapshot(db: Session) -> Optional[Dict[str, Any]]:
         return None
     row = (
         db.query(Snapshot)
-        .order_by(Snapshot.created_at.desc())
+        .order_by(Snapshot.timestamp.desc(), Snapshot.created_at.desc())
         .first()
     )
     if row is None:
         return None
-    return _normalize_snapshot(row.payload or {})
+    snapshot: Dict[str, Any] = {
+        "symbol": row.symbol,
+        "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+        "price": _decimal_to_native(row.price),
+        "candles": _coerce_json(row.candles_json),
+        "structure": _coerce_json(row.market_structure_json),
+        "momentum": _coerce_json(row.momentum_json),
+        "session": _coerce_json(row.session_json),
+    }
+
+    candles = snapshot.get("candles")
+    if isinstance(candles, dict) and "5m" not in candles:
+        if any(value is not None for value in (row.o_5m, row.h_5m, row.l_5m, row.c_5m)):
+            candles = dict(candles)
+            candles["5m"] = {
+                "open": _decimal_to_native(row.o_5m),
+                "high": _decimal_to_native(row.h_5m),
+                "low": _decimal_to_native(row.l_5m),
+                "close": _decimal_to_native(row.c_5m),
+            }
+            snapshot["candles"] = candles
+    elif not candles and any(
+        value is not None for value in (row.o_5m, row.h_5m, row.l_5m, row.c_5m)
+    ):
+        snapshot["candles"] = {
+            "5m": {
+                "open": _decimal_to_native(row.o_5m),
+                "high": _decimal_to_native(row.h_5m),
+                "low": _decimal_to_native(row.l_5m),
+                "close": _decimal_to_native(row.c_5m),
+            }
+        }
+
+    return _normalize_snapshot(snapshot)
 
 
 def build_btc_snapshot(db: Session, *, snapshot_path: Optional[Path] = None) -> Dict[str, Any]:
@@ -93,8 +128,111 @@ def build_btc_snapshot(db: Session, *, snapshot_path: Optional[Path] = None) -> 
 
 
 def persist_snapshot(db: Session, payload: Dict[str, Any]) -> Snapshot:
-    snapshot = Snapshot(symbol=payload.get("symbol", "BTCUSDT"), payload=_normalize_snapshot(payload))
+    candles = payload.get("candles") if isinstance(payload.get("candles"), dict) else {}
+    candle_5m = candles.get("5m") if isinstance(candles, dict) else {}
+
+    timestamp_value = _parse_timestamp(payload.get("timestamp")) or datetime.utcnow()
+    price_value = _extract_price(payload, candle_5m)
+    if price_value is None:
+        raise ValueError("Cannot persist snapshot without price")
+
+    snapshot = Snapshot(
+        symbol=payload.get("symbol", "BTCUSDT"),
+        timestamp=timestamp_value,
+        price=price_value,
+        o_5m=_decimal_or_none(_get_candle_value(candle_5m, "open")),
+        h_5m=_decimal_or_none(_get_candle_value(candle_5m, "high")),
+        l_5m=_decimal_or_none(_get_candle_value(candle_5m, "low")),
+        c_5m=_decimal_or_none(_get_candle_value(candle_5m, "close")),
+        candles_json=candles or None,
+        market_structure_json=payload.get("structure"),
+        momentum_json=payload.get("momentum"),
+        session_json=payload.get("session"),
+    )
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
     return snapshot
+
+
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.utcfromtimestamp(float(value))
+        except (ValueError, OSError):
+            return None
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _decimal_or_none(value: Any) -> Optional[Decimal]:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        return None
+
+
+def _decimal_to_native(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_json(value: Any) -> Optional[Dict[str, Any]]:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _extract_price(payload: Dict[str, Any], candle_5m: Dict[str, Any]) -> Optional[Decimal]:
+    for key in ("price", "last_price"):
+        candidate = payload.get(key)
+        price = _decimal_or_none(candidate)
+        if price is not None:
+            return price
+
+    if isinstance(candle_5m, dict):
+        for key in ("close", "c", "last_close"):
+            candidate = candle_5m.get(key)
+            price = _decimal_or_none(candidate)
+            if price is not None:
+                return price
+    return None
+
+
+def _get_candle_value(candle: Dict[str, Any], key: str) -> Any:
+    if not isinstance(candle, dict):
+        return None
+    if key in candle:
+        return candle.get(key)
+    alias = {
+        "open": "o",
+        "high": "h",
+        "low": "l",
+        "close": "c",
+    }.get(key)
+    if alias:
+        return candle.get(alias)
+    return None

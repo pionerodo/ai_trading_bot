@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict
 
@@ -71,7 +72,17 @@ def seed(session: Session) -> None:
             "structure": {"trend": "up"},
         },
     )
-    snapshot = Snapshot(symbol=DEFAULT_SYMBOL, payload=snapshot_payload)
+    now = datetime.utcnow()
+    snapshot = Snapshot(
+        symbol=DEFAULT_SYMBOL,
+        timestamp=now,
+        price=Decimal(str(snapshot_payload.get("price") or 0)),
+        c_5m=Decimal(str(snapshot_payload.get("price") or 0)),
+        candles_json=snapshot_payload.get("candles"),
+        market_structure_json=snapshot_payload.get("structure"),
+        momentum_json=snapshot_payload.get("momentum"),
+        session_json=snapshot_payload.get("session"),
+    )
     session.add(snapshot)
     session.commit()
     session.refresh(snapshot)
@@ -93,7 +104,6 @@ def seed(session: Session) -> None:
     session.commit()
     session.refresh(flow)
 
-    now = datetime.utcnow()
     decision = Decision(
         symbol=DEFAULT_SYMBOL,
         action="long",
