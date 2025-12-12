@@ -20,10 +20,22 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
 )
-from sqlalchemy.dialects.mysql import BIGINT as MySQLBigInt
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .session import Base
+
+
+class BigIntPrimaryKey(TypeDecorator):
+    """Use BIGINT for MySQL/MariaDB while keeping SQLite AUTOINCREMENT working."""
+
+    impl = Integer
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):  # type: ignore[override]
+        if dialect.name in {"mysql", "mariadb"}:
+            return dialect.type_descriptor(BigInteger())
+        return dialect.type_descriptor(Integer())
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +51,9 @@ class BotState(Base):
 
     __tablename__ = "bot_state"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigIntPrimaryKey(), primary_key=True, autoincrement=True
+    )
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     value: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -62,7 +76,9 @@ class Candle(Base):
 
     __tablename__ = "candles"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigIntPrimaryKey(), primary_key=True, autoincrement=True
+    )
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
@@ -106,15 +122,33 @@ class Snapshot(Base):
 
     __tablename__ = "snapshots"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigIntPrimaryKey(), primary_key=True, autoincrement=True
+    )
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 
-    # исходный JSON-слепок рынка (btc_snapshot.json)
-    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+
+    o_5m: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    h_5m: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    l_5m: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+    c_5m: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8))
+
+    candles_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    market_structure_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    momentum_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    session_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "timestamp", name="uq_snapshots_symbol_ts"),
+        Index("idx_snapshots_ts", "timestamp"),
     )
 
 
@@ -131,7 +165,7 @@ class Flow(Base):
 
     __tablename__ = "flows"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 
@@ -168,7 +202,7 @@ class Notification(Base):
 
     __tablename__ = "notifications"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
     level: Mapped[str] = mapped_column(String(20), nullable=False, default="info")
     channel: Mapped[str] = mapped_column(String(50), nullable=False, default="log")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -193,7 +227,7 @@ class LiquidationZone(Base):
 
     __tablename__ = "liquidation_zones"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     side: Mapped[str] = mapped_column(
@@ -226,7 +260,7 @@ class Decision(Base):
 
     __tablename__ = "decisions"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 
@@ -303,7 +337,7 @@ class Position(Base):
 
     __tablename__ = "positions"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 
@@ -346,7 +380,7 @@ class Order(Base):
 
     __tablename__ = "orders"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     exchange_order_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
 
@@ -392,7 +426,7 @@ class Trade(Base):
 
     __tablename__ = "trades"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     exchange_trade_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
 
@@ -435,7 +469,7 @@ class MarketFlow(Base):
 
     __tablename__ = "market_flow"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
@@ -468,7 +502,7 @@ class Log(Base):
 
     __tablename__ = "logs"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, index=True
@@ -501,7 +535,7 @@ class RiskEvent(Base):
 
     __tablename__ = "risk_events"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, index=True
@@ -531,11 +565,7 @@ class EquityCurve(Base):
 
     __tablename__ = "equity_curve"
 
-    id: Mapped[int] = mapped_column(
-        Integer().with_variant(MySQLBigInt(unsigned=True), "mysql"),
-        primary_key=True,
-        autoincrement=True,
-    )
+    id: Mapped[int] = mapped_column(BigIntPrimaryKey(), primary_key=True, autoincrement=True)
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 

@@ -13,7 +13,27 @@ def test_snapshot_flow_decision_chain():
 
     Session = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     with Session() as session:
-        snapshot = Snapshot(symbol="BTCUSDT", payload={"price": 100_000, "structure": "up"})
+        now = datetime.utcnow()
+        snapshot = Snapshot(
+            symbol="BTCUSDT",
+            timestamp=now,
+            price=Decimal("100000"),
+            o_5m=Decimal("99900"),
+            h_5m=Decimal("101000"),
+            l_5m=Decimal("99500"),
+            c_5m=Decimal("100500"),
+            candles_json={
+                "5m": {
+                    "open": 99_900,
+                    "high": 101_000,
+                    "low": 99_500,
+                    "close": 100_500,
+                }
+            },
+            market_structure_json={"structure": "up"},
+            momentum_json={"score": 0.8},
+            session_json={"current": "asia"},
+        )
         session.add(snapshot)
         session.commit()
         session.refresh(snapshot)
@@ -31,7 +51,7 @@ def test_snapshot_flow_decision_chain():
             symbol="BTCUSDT",
             action="long",
             reason="smoke-test",
-            timestamp=int(snapshot.created_at.timestamp()),
+            timestamp=int(snapshot.timestamp.timestamp()),
             snapshot_id=snapshot.id,
             flow_id=flow.id,
             entry_min_price=Decimal("99900"),

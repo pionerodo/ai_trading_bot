@@ -16,6 +16,7 @@ def test_build_snapshot_prefers_db_data(tmp_path):
     payload = {
         "symbol": "BTCUSDT",
         "timestamp": datetime.utcnow().isoformat(),
+        "price": 1.5,
         "candles": {
             "1m": {"open": 1, "high": 2, "low": 0.5, "close": 1.5},
         },

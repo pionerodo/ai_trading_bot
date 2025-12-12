@@ -71,14 +71,25 @@ def load_latest_price_for_symbol(db_session_factory, symbol: str = "BTCUSDT") ->
         row = (
             session.query(Snapshot)
             .filter(Snapshot.symbol == symbol)
-            .order_by(Snapshot.created_at.desc())
+            .order_by(Snapshot.timestamp.desc(), Snapshot.created_at.desc())
             .first()
         )
         if not row:
             return None
-        payload = row.payload or {}
-        price_value = payload.get("price") or payload.get("last_price")
-        return _as_decimal(price_value)
+        if row.price is not None:
+            return _as_decimal(row.price)
+
+        candles = row.candles_json if isinstance(row.candles_json, dict) else None
+        if candles and isinstance(candles.get("5m"), dict):
+            candle_5m = candles["5m"]
+            price_value = (
+                candle_5m.get("close")
+                or candle_5m.get("c")
+                or candle_5m.get("last_close")
+            )
+            if price_value is not None:
+                return _as_decimal(price_value)
+        return None
 
 
 def load_linked_decision_and_liq_zone(
