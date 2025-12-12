@@ -20,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
 )
+from sqlalchemy.dialects.mysql import BIGINT as MySQLBigInt
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .session import Base
@@ -530,7 +531,11 @@ class EquityCurve(Base):
 
     __tablename__ = "equity_curve"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        Integer().with_variant(MySQLBigInt(unsigned=True), "mysql"),
+        primary_key=True,
+        autoincrement=True,
+    )
 
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
 
@@ -539,11 +544,17 @@ class EquityCurve(Base):
     )
 
     equity_usdt: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
-    balance_usdt: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    balance_usdt: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 4))
 
-    realized_pnl_usdt: Mapped[Decimal] = mapped_column(
+    realized_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 4), nullable=False, default=Decimal("0")
     )
-    unrealized_pnl_usdt: Mapped[Decimal] = mapped_column(
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, default=Decimal("0")
+    )
+    daily_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, default=Decimal("0")
+    )
+    weekly_pnl: Mapped[Decimal] = mapped_column(
         Numeric(20, 4), nullable=False, default=Decimal("0")
     )
