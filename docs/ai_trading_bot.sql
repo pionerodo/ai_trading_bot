@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: localhost
--- Время создания: Дек 08 2025 г., 00:54
+-- Время создания: Дек 12 2025 г., 12:30
 -- Версия сервера: 10.11.10-MariaDB-log
 -- Версия PHP: 8.3.25
 
@@ -282,7 +282,8 @@ CREATE TABLE `market_flow` (
   `liquidations_long` float DEFAULT NULL,
   `liquidations_short` float DEFAULT NULL,
   `risk_score` float DEFAULT NULL,
-  `json_data` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`json_data`))
+  `json_data` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`json_data`)),
+  `current_price` decimal(20,8) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- --------------------------------------------------------
