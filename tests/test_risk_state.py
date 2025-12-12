@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics_engine.risk_state import RiskStateService
@@ -22,6 +22,7 @@ def test_risk_state_blocks_on_drawdown_and_trades():
     with Session() as session:
         session.add(
             Trade(
+                id=1,
                 exchange_trade_id="t1",
                 symbol="BTCUSDT",
                 side="buy",
@@ -54,6 +55,7 @@ def test_risk_state_updates_equity_curve():
     service = RiskStateService(Session, starting_equity_usdt=Decimal("500"))
 
     trade = Trade(
+        id=2,
         exchange_trade_id="t2",
         symbol="BTCUSDT",
         side="sell",
@@ -69,7 +71,7 @@ def test_risk_state_updates_equity_curve():
 
     with Session() as session:
         curve_rows = session.execute(
-            "SELECT equity_usdt, realized_pnl_usdt FROM equity_curve WHERE symbol='BTCUSDT'"
+            text("SELECT equity_usdt, realized_pnl FROM equity_curve WHERE symbol='BTCUSDT'")
         ).all()
     assert curve_rows, "equity curve must be updated"
     assert Decimal(curve_rows[0][0]) == Decimal("550")
