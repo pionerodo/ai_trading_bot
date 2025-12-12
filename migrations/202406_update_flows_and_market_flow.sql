@@ -8,6 +8,18 @@
 DROP TABLE IF EXISTS flows_legacy_v2;
 RENAME TABLE flows TO flows_legacy_v2;
 
+-- Normalize legacy structure to avoid missing-column errors
+ALTER TABLE flows_legacy_v2
+    ADD COLUMN IF NOT EXISTS captured_at_utc DATETIME NULL,
+    ADD COLUMN IF NOT EXISTS created_at DATETIME NULL;
+
+-- Backfill captured_at_utc/created_at from available fields
+UPDATE flows_legacy_v2
+SET
+    captured_at_utc = COALESCE(captured_at_utc, timestamp, created_at),
+    created_at = COALESCE(created_at, captured_at_utc, timestamp, CURRENT_TIMESTAMP)
+WHERE captured_at_utc IS NULL OR created_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS flows (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     symbol VARCHAR(20) NOT NULL,
